@@ -297,15 +297,15 @@ def build_container_image(project_root, use_mock_sbctl=False):
         return False, e
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def container_image(request):
     """
-    Session-scoped fixture that ensures the OCI container image is built once for all tests.
+    Module-scoped fixture that builds OCI container image when needed for tests.
 
     If the test is marked with 'mock_sbctl', a test image with mock sbctl will be built.
     Otherwise, the standard image will be built.
 
-    This is used by all e2e tests to avoid rebuilding the image for each test file.
+    Module-scoped to ensure test isolation while still allowing reuse within a test module.
 
     Args:
         request: The pytest request object
@@ -320,17 +320,9 @@ def container_image(request):
     # Get project root directory
     project_root = Path(__file__).parents[1]
 
-    # ALWAYS rebuild the container to ensure tests use current configuration
-    # This prevents bugs where cached images with outdated configs pass tests
-    print(f"\nForce rebuilding container image to ensure current configuration is tested...")
-    
-    # Remove any existing image first to ensure a clean build
-    subprocess.run(
-        ["podman", "rmi", "-f", "troubleshoot-mcp-server:latest"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        check=False,
-    )
+    # Always run the build process - let Podman handle layer caching for efficiency
+    # This ensures tests always use current configuration without breaking normal caching
+    print(f"\nBuilding container image (Podman will use layer cache for efficiency)...")
 
     # Determine if we should use mock sbctl based on markers
     use_mock_sbctl = request.node.get_closest_marker("mock_sbctl") is not None

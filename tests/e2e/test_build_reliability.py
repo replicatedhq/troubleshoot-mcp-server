@@ -111,13 +111,13 @@ def test_build_config_changes_reflected_in_tests():
     )
     
     # Verify the fix is in place
-    assert "Force rebuilding container image" in conftest_content, (
-        "The fix to always rebuild container images should be present in conftest.py"
+    assert "Building container image (Podman will use layer cache" in conftest_content, (
+        "The fix to always build container images should be present in conftest.py"
     )
     
-    # Verify cleanup is happening
-    assert '"podman", "rmi", "-f"' in conftest_content, (
-        "Container cleanup should be present to ensure fresh builds"
+    # Verify we always build (no dangerous skip logic)
+    assert "Always run the build process" in conftest_content, (
+        "Tests should always run build process and rely on Podman layer caching"
     )
 
 
