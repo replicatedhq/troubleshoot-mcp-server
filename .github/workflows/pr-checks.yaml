@@ -234,15 +234,9 @@ jobs:
           # Install development dependencies
           uv pip install -e ".[dev]"
       
-      - name: Install sbctl
-        run: |
-          mkdir -p /tmp/sbctl && cd /tmp/sbctl
-          curl -L -o sbctl.tar.gz "https://github.com/replicatedhq/sbctl/releases/latest/download/sbctl_linux_amd64.tar.gz"
-          tar xzf sbctl.tar.gz
-          chmod +x sbctl
-          sudo mv sbctl /usr/local/bin/
-          cd / && rm -rf /tmp/sbctl
-          sbctl --help
+      # NOTE: sbctl intentionally NOT installed for container tests
+      # Container tests must validate that sbctl is properly packaged in containers
+      # Installing on host would mask container packaging bugs
       
       - name: Check Podman version
         run: podman --version
@@ -308,15 +302,8 @@ jobs:
           # Install development dependencies
           uv pip install -e ".[dev]"
       
-      - name: Install sbctl
-        run: |
-          mkdir -p /tmp/sbctl && cd /tmp/sbctl
-          curl -L -o sbctl.tar.gz "https://github.com/replicatedhq/sbctl/releases/latest/download/sbctl_linux_amd64.tar.gz"
-          tar xzf sbctl.tar.gz
-          chmod +x sbctl
-          sudo mv sbctl /usr/local/bin/
-          cd / && rm -rf /tmp/sbctl
-          sbctl --help
+      # NOTE: sbctl intentionally NOT installed for e2e tests
+      # E2E tests use mocked sbctl or test without requiring host installation
       
       - name: Run E2E tests (non-container)
         run: uv run pytest tests/e2e/ -m "e2e and not container" -v

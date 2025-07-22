@@ -111,6 +111,32 @@ jobs:
             podman tag ${IMAGE_NAME}:${VERSION} ${IMAGE_NAME}:latest
           fi
       
+      - name: Validate built container before publishing
+        env:
+          IMAGE_NAME: ${{ steps.prep.outputs.image }}
+          VERSION: ${{ steps.get-version.outputs.version }}
+        run: |
+          # CRITICAL: Test that required tools are actually in the container
+          # This prevents publishing broken images that are missing essential tools
+          
+          echo "Validating container image ${IMAGE_NAME}:${VERSION}..."
+          
+          # Test 1: sbctl must be present and executable
+          echo "Checking sbctl..."
+          podman run --rm ${IMAGE_NAME}:${VERSION} which sbctl
+          podman run --rm ${IMAGE_NAME}:${VERSION} sbctl --help | head -5
+          
+          # Test 2: kubectl must be present
+          echo "Checking kubectl..." 
+          podman run --rm ${IMAGE_NAME}:${VERSION} which kubectl
+          podman run --rm ${IMAGE_NAME}:${VERSION} kubectl version --client=true --output=yaml | head -5
+          
+          # Test 3: MCP server must be able to start
+          echo "Testing MCP server startup..."
+          timeout 10 podman run --rm ${IMAGE_NAME}:${VERSION} python3 -m mcp_server_troubleshoot --help | head -5
+          
+          echo "✅ Container validation passed - safe to publish"
+      
       - name: Cleanup signing key
         if: always()
         run: |
