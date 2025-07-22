@@ -47,3 +47,6 @@ trees/
 melange.rsa
 melange-test.rsa
 melange-test.rsa.pub
+
+# Build artifacts
+packages/
