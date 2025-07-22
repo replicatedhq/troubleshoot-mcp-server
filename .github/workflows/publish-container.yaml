@@ -123,12 +123,14 @@ jobs:
           
           # Test 1: sbctl must be present and executable
           echo "Checking sbctl..."
-          podman run --rm --entrypoint which ${IMAGE_NAME}:${VERSION} sbctl
+          podman run --rm --entrypoint test ${IMAGE_NAME}:${VERSION} -f /usr/bin/sbctl
+          podman run --rm --entrypoint test ${IMAGE_NAME}:${VERSION} -x /usr/bin/sbctl
           podman run --rm --entrypoint sbctl ${IMAGE_NAME}:${VERSION} --help | head -5
           
           # Test 2: kubectl must be present
           echo "Checking kubectl..." 
-          podman run --rm --entrypoint which ${IMAGE_NAME}:${VERSION} kubectl
+          podman run --rm --entrypoint test ${IMAGE_NAME}:${VERSION} -f /usr/bin/kubectl
+          podman run --rm --entrypoint test ${IMAGE_NAME}:${VERSION} -x /usr/bin/kubectl
           podman run --rm --entrypoint kubectl ${IMAGE_NAME}:${VERSION} version --client=true --output=yaml | head -5
           
           # Test 3: MCP server must be able to start
