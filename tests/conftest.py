@@ -322,7 +322,7 @@ def container_image(request):
 
     # Always run the build process - let Podman handle layer caching for efficiency
     # This ensures tests always use current configuration without breaking normal caching
-    print(f"\nBuilding container image (Podman will use layer cache for efficiency)...")
+    print("\nBuilding container image (Podman will use layer cache for efficiency)...")
 
     # Determine if we should use mock sbctl based on markers
     use_mock_sbctl = request.node.get_closest_marker("mock_sbctl") is not None
