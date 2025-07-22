@@ -54,7 +54,13 @@ if ! podman run --rm --privileged --cap-add=SYS_ADMIN -v "$PWD":/work cgr.dev/ch
 fi
 
 echo "Building apko image..."
-if ! podman run --rm --privileged --cap-add=SYS_ADMIN -v "$PWD":/work cgr.dev/chainguard/apko build apko.yaml "${IMAGE_NAME}:${IMAGE_TAG}" "${IMAGE_NAME}.tar" ${ARCH_FLAGS}; then
+APKO_FLAGS="${ARCH_FLAGS}"
+if [[ "${MELANGE_TEST_BUILD:-false}" == "true" ]]; then
+    echo "Ignoring signatures for test build..."
+    APKO_FLAGS="${APKO_FLAGS} --ignore-signatures"
+fi
+
+if ! podman run --rm --privileged --cap-add=SYS_ADMIN -v "$PWD":/work cgr.dev/chainguard/apko build apko.yaml "${IMAGE_NAME}:${IMAGE_TAG}" "${IMAGE_NAME}.tar" ${APKO_FLAGS}; then
     echo "Apko build failed!"
     exit 1
 fi

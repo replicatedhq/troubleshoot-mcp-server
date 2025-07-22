@@ -113,7 +113,7 @@ def test_container_has_required_tools_isolated(container_image: str):
             ), f"sbctl --help output doesn't contain expected usage text: {result.stdout}"
 
 
-def test_container_bundle_initialization_isolated(container_image: str, temp_bundle_dir):
+def test_container_bundle_initialization_isolated(container_image: str, temp_bundles_directory):
     """
     Test that bundle initialization works using only container tools.
 

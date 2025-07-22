@@ -145,13 +145,12 @@ def safe_open(file_path, mode):
         file.close()
 
 
-def build_container_image(project_root, use_mock_sbctl=False):
+def build_container_image(project_root):
     """
-    Build the Podman image for tests using melange/apko.
+    Build the Podman image for tests using melange/apko with real sbctl.
 
     Args:
         project_root: The root directory of the project
-        use_mock_sbctl: Whether to use the mock sbctl implementation
 
     Returns:
         A tuple of (success, result) where success is a boolean and result
@@ -182,113 +181,19 @@ def build_container_image(project_root, use_mock_sbctl=False):
             check=False,
         )
 
-        # For test mode with mock sbctl, we need to modify the melange config
-        if use_mock_sbctl:
-            # Create a temporary melange config with mock sbctl
-            melange_test_config = project_root / ".melange.test.yaml"
-
-            # Read the original melange config
-            melange_content = ""
-            with safe_open(melange_config, "r") as f:
-                melange_content = f.read()
-
-            # Modify the pipeline to use mock sbctl
-            mock_pipeline = """pipeline:
-  - name: Install package with dependencies
-    runs: |
-      python3 -m pip install .
-  - name: Install mock sbctl
-    runs: |
-      cp tests/fixtures/mock_sbctl.py /usr/bin/sbctl
-      chmod +x /usr/bin/sbctl"""
-
-            # Replace the pipeline section
-            import re
-
-            melange_content = re.sub(
-                r"pipeline:.*", mock_pipeline, melange_content, flags=re.DOTALL
-            )
-
-            # Write the modified melange config
-            with safe_open(melange_test_config, "w") as f:
-                f.write(melange_content)
-
-            # Build using the temporary melange config
-            # First build the package
-            result = subprocess.run(
-                [
-                    "podman",
-                    "run",
-                    "--rm",
-                    "-v",
-                    f"{project_root}:/work",
-                    "cgr.dev/chainguard/melange",
-                    "build",
-                    ".melange.test.yaml",
-                    "--arch=amd64",
-                ],
-                cwd=str(project_root),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                timeout=300,
-                check=True,
-            )
-
-            # Then build the image
-            result = subprocess.run(
-                [
-                    "podman",
-                    "run",
-                    "--rm",
-                    "-v",
-                    f"{project_root}:/work",
-                    "cgr.dev/chainguard/apko",
-                    "build",
-                    "apko.yaml",
-                    "troubleshoot-mcp-server:latest",
-                    "troubleshoot-mcp-server.tar",
-                    "--arch=amd64",
-                ],
-                cwd=str(project_root),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                timeout=300,
-                check=True,
-            )
-
-            # Load the image
-            result = subprocess.run(
-                ["podman", "load", "-i", "troubleshoot-mcp-server.tar"],
-                cwd=str(project_root),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                timeout=60,
-                check=True,
-            )
-
-            # Clean up temporary files
-            if melange_test_config.exists():
-                melange_test_config.unlink()
-            tar_file = project_root / "troubleshoot-mcp-server.tar"
-            if tar_file.exists():
-                tar_file.unlink()
-        else:
-            # Use the standard build script with test keys
-            env = os.environ.copy()
-            env["MELANGE_TEST_BUILD"] = "true"
-            result = subprocess.run(
-                [str(build_script)],
-                cwd=str(project_root),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                timeout=300,
-                env=env,
-                check=True,
-            )
+        # Use the standard build script with test keys and keyring verification skipping
+        env = os.environ.copy()
+        env["MELANGE_TEST_BUILD"] = "true"
+        result = subprocess.run(
+            [str(build_script)],
+            cwd=str(project_root),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=300,
+            env=env,
+            check=True,
+        )
 
         return True, result
     except subprocess.CalledProcessError as e:
@@ -324,21 +229,11 @@ def container_image(request):
     # This ensures tests always use current configuration without breaking normal caching
     print("\nBuilding container image (Podman will use layer cache for efficiency)...")
 
-    # Determine if we should use mock sbctl based on markers
-    use_mock_sbctl = request.node.get_closest_marker("mock_sbctl") is not None
-
-    # Can also be controlled by environment variable for non-marker tests
-    if os.environ.get("USE_MOCK_SBCTL", "").lower() in ("true", "1", "yes"):
-        use_mock_sbctl = True
-
     # Print what we're doing
-    if use_mock_sbctl:
-        print("\nBuilding OCI container image with mock sbctl for tests...")
-    else:
-        print("\nBuilding standard OCI container image for tests...")
+    print("\nBuilding standard OCI container image for tests...")
 
-    # Build the container image
-    success, result = build_container_image(project_root, use_mock_sbctl)
+    # Build the container image with real sbctl
+    success, result = build_container_image(project_root)
 
     if not success:
         if isinstance(result, str):

@@ -25,7 +25,7 @@ function usage() {
   echo "Options:"
   echo "  -v, --verbose     Run with verbose output            (uv run pytest -v)"
   echo "  --no-timeout      Disable test timeouts              (uv run pytest --timeout 0)"
-  echo "  --mock-sbctl      Use mock sbctl for tests           (USE_MOCK_SBCTL=true)" 
+ 
   echo "  --                Pass remaining options to pytest   (uv run pytest ...)"
   echo
   echo "Examples:"
@@ -40,7 +40,6 @@ function usage() {
 # Default options
 VERBOSE=""
 TIMEOUT=""
-MOCK_SBCTL=""
 TEST_TYPE=${1:-all}
 shift_index=0
 
@@ -54,9 +53,6 @@ for arg in "$@"; do
       ;;
     --no-timeout)
       TIMEOUT="--timeout 0"
-      ;;
-    --mock-sbctl)
-      MOCK_SBCTL="USE_MOCK_SBCTL=true"
       ;;
     --)
       # Stop parsing our args
@@ -102,9 +98,4 @@ esac
 
 # Run the tests using UV directly
 echo "Running tests: $TEST_TYPE"
-if [ -n "$MOCK_SBCTL" ]; then
-  # Use env prefix for environment variables with UV
-  $MOCK_SBCTL uv run pytest $MARKER $VERBOSE $TIMEOUT "$@"
-else
-  uv run pytest $MARKER $VERBOSE $TIMEOUT "$@"
-fi
+uv run pytest $MARKER $VERBOSE $TIMEOUT "$@"

@@ -1708,22 +1708,18 @@ class BundleManager:
         Returns:
             True if sbctl is available, False otherwise
         """
-        # If we're in test mode with USE_MOCK_SBCTL, assume it's available
-        if os.environ.get("USE_MOCK_SBCTL", "").lower() in ("true", "1", "yes"):
-            logger.info("Using mock sbctl for testing")
-            return True
 
         try:
             proc = await asyncio.create_subprocess_exec(
-                "which", "sbctl", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+                "sbctl", "--help", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
             )
             stdout, stderr = await proc.communicate()
 
-            if proc.returncode == 0 and stdout:
-                logger.debug(f"sbctl found at: {stdout.decode().strip()}")
+            if proc.returncode == 0:
+                logger.debug("sbctl is available")
                 return True
             else:
-                logger.warning("sbctl not found")
+                logger.warning("sbctl not found or not working")
                 return False
         except Exception as e:
             logger.warning(f"Error checking sbctl availability: {str(e)}")
