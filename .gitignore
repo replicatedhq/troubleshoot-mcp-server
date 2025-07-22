@@ -50,3 +50,14 @@ melange-test.rsa.pub
 
 # Build artifacts
 packages/
+*.tar
+*.spdx.json
+
+# Coverage files
+.coverage
+coverage.xml
+
+# Tool caches
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
