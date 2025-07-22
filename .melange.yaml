@@ -34,5 +34,5 @@ pipeline:
     runs: |
       tar -xzf sbctl_linux_amd64.tar.gz
       chmod +x ./sbctl
-      mkdir -p /usr/local/bin
-      cp ./sbctl /usr/local/bin/sbctl
+      mkdir -p ${{targets.destdir}}/usr/bin
+      cp ./sbctl ${{targets.destdir}}/usr/bin/sbctl

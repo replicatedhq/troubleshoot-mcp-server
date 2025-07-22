@@ -320,19 +320,17 @@ def container_image(request):
     # Get project root directory
     project_root = Path(__file__).parents[1]
 
-    # Check if image already exists to avoid rebuilding
-    image_check = subprocess.run(
-        ["podman", "image", "exists", "troubleshoot-mcp-server:latest"],
+    # ALWAYS rebuild the container to ensure tests use current configuration
+    # This prevents bugs where cached images with outdated configs pass tests
+    print(f"\nForce rebuilding container image to ensure current configuration is tested...")
+    
+    # Remove any existing image first to ensure a clean build
+    subprocess.run(
+        ["podman", "rmi", "-f", "troubleshoot-mcp-server:latest"],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         check=False,
     )
-
-    # Image exists already, just use it
-    if image_check.returncode == 0:
-        print("\nUsing existing container image for tests...")
-        yield "troubleshoot-mcp-server:latest"
-        return
 
     # Determine if we should use mock sbctl based on markers
     use_mock_sbctl = request.node.get_closest_marker("mock_sbctl") is not None
