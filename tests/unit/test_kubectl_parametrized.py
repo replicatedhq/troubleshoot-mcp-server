@@ -284,8 +284,14 @@ async def test_kubectl_timeout_behavior(test_assertions, test_factory):
     bundle_manager.get_active_bundle.return_value = bundle
     executor = KubectlExecutor(bundle_manager)
 
-    # Test with a very short timeout
-    with patch("asyncio.create_subprocess_exec", return_value=mock_process):
+    # Test with a very short timeout by mocking the subprocess utility
+    async def mock_subprocess_timeout(*args, **kwargs):
+        raise asyncio.TimeoutError("Command timed out")
+
+    with patch(
+        "mcp_server_troubleshoot.subprocess_utils.subprocess_exec_with_cleanup",
+        side_effect=mock_subprocess_timeout,
+    ):
         with pytest.raises(KubectlError) as excinfo:
             await executor._run_kubectl_command("get pods", bundle, 0.1, True)
 
@@ -293,8 +299,7 @@ async def test_kubectl_timeout_behavior(test_assertions, test_factory):
         assert "timed out" in str(excinfo.value).lower()
         assert excinfo.value.exit_code == 124  # Standard timeout exit code
 
-        # Verify the process was killed
-        mock_process.kill.assert_called_once()
+        # The subprocess_exec_with_cleanup utility handles process cleanup internally
 
 
 @pytest.mark.asyncio

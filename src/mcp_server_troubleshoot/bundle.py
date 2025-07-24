@@ -1657,45 +1657,39 @@ class BundleManager:
         # Check sbctl logs for clues about server URL (real sbctl prints this on startup)
         if self.sbctl_process and self.sbctl_process.stdout:
             try:
-                # Try non-blocking read from process stdout
-                stdout_reader = asyncio.StreamReader()
-                stdout_protocol = asyncio.StreamReaderProtocol(stdout_reader)
-                loop = asyncio.get_event_loop()
-                transport, _ = await loop.connect_read_pipe(
-                    lambda: stdout_protocol, self.sbctl_process.stdout
-                )
+                # Try non-blocking read from process stdout with proper transport cleanup
+                from .subprocess_utils import pipe_transport_reader
 
-                # Set a timeout for reading
                 try:
-                    data = await asyncio.wait_for(stdout_reader.read(1024), timeout=0.5)
-                    if data:
-                        output = data.decode("utf-8", errors="replace")
-                        logger.debug(f"sbctl process output: {output}")
+                    async with pipe_transport_reader(self.sbctl_process.stdout) as stdout_reader:
+                        # Set a timeout for reading
+                        data = await asyncio.wait_for(stdout_reader.read(1024), timeout=0.5)
+                        if data:
+                            output = data.decode("utf-8", errors="replace")
+                            logger.debug(f"sbctl process output: {output}")
 
-                        # Look for server URL pattern in output
-                        # Example: Server is running at http://localhost:8080
-                        import re
+                            # Look for server URL pattern in output
+                            # Example: Server is running at http://localhost:8080
+                            import re
 
-                        url_pattern = re.compile(r"https?://[^\s]+")
-                        urls = url_pattern.findall(output)
-                        if urls:
-                            for url in urls:
-                                logger.debug(f"Found URL in sbctl output: {url}")
-                                try:
-                                    from urllib.parse import urlparse
+                            url_pattern = re.compile(r"https?://[^\s]+")
+                            urls = url_pattern.findall(output)
+                            if urls:
+                                for url in urls:
+                                    logger.debug(f"Found URL in sbctl output: {url}")
+                                    try:
+                                        from urllib.parse import urlparse
 
-                                    parsed_url = urlparse(url)
-                                    if parsed_url.port:
-                                        port = parsed_url.port
-                                        logger.debug(f"Using port from sbctl output: {port}")
-                                    if parsed_url.hostname:
-                                        host = parsed_url.hostname
-                                except Exception:
-                                    pass
+                                        parsed_url = urlparse(url)
+                                        if parsed_url.port:
+                                            port = parsed_url.port
+                                            logger.debug(f"Using port from sbctl output: {port}")
+                                        if parsed_url.hostname:
+                                            host = parsed_url.hostname
+                                    except Exception:
+                                        pass
                 except asyncio.TimeoutError:
                     logger.debug("Timeout reading from sbctl stdout")
-                finally:
-                    transport.close()
             except Exception as e:
                 logger.debug(f"Error reading sbctl output: {e}")
 
@@ -1742,38 +1736,31 @@ class BundleManager:
                 logger.warning(f"Failed to connect to API server at {url}: {str(e)}")
                 continue
 
-        # Try checking with curl as a backup method
+        # Try checking with a more aggressive aiohttp retry as backup
         try:
-            for endpoint in endpoints:
-                url = f"http://{host}:{port}{endpoint}"
-                logger.debug(f"Checking API server with curl: {url}")
+            # Use a longer timeout for backup check
+            backup_timeout = aiohttp.ClientTimeout(total=3.0)
+            async with aiohttp.ClientSession(timeout=backup_timeout) as session:
+                for endpoint in endpoints:
+                    url = f"http://{host}:{port}{endpoint}"
+                    logger.debug(f"Checking API server with backup aiohttp check: {url}")
 
-                curl_proc = await asyncio.create_subprocess_exec(
-                    "curl",
-                    "-s",
-                    "-o",
-                    "/dev/null",
-                    "-w",
-                    "%{http_code}",
-                    url,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                )
+                    try:
+                        async with session.get(url) as response:
+                            logger.debug(
+                                f"Backup aiohttp check to {url} returned status code: {response.status}"
+                            )
 
-                try:
-                    stdout, stderr = await asyncio.wait_for(curl_proc.communicate(), timeout=3.0)
-                    status_code = stdout.decode().strip()
-
-                    logger.debug(f"Curl to {url} returned status code: {status_code}")
-
-                    if status_code == "200":
-                        logger.info(f"API server is available at {url} (curl check)")
-                        return True
-                except asyncio.TimeoutError:
-                    logger.warning(f"Curl timeout for {url}")
-                    continue
+                            if response.status == 200:
+                                logger.info(
+                                    f"API server is available at {url} (backup aiohttp check)"
+                                )
+                                return True
+                    except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                        logger.warning(f"Backup aiohttp check failed for {url}: {e}")
+                        continue
         except Exception as e:
-            logger.warning(f"Error using curl to check API server: {e}")
+            logger.warning(f"Error in backup aiohttp API server check: {e}")
 
         logger.warning("API server is not available at any endpoint")
         return False
@@ -1822,12 +1809,13 @@ class BundleManager:
         """
 
         try:
-            proc = await asyncio.create_subprocess_exec(
-                "sbctl", "--help", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-            )
-            stdout, stderr = await proc.communicate()
+            from .subprocess_utils import subprocess_exec_with_cleanup
 
-            if proc.returncode == 0:
+            returncode, stdout, stderr = await subprocess_exec_with_cleanup(
+                "sbctl", "--help", timeout=10.0
+            )
+
+            if returncode == 0:
                 logger.debug("sbctl is available")
                 return True
             else:
@@ -1877,15 +1865,13 @@ class BundleManager:
 
             # Check network connections on the port
             try:
-                proc = await asyncio.create_subprocess_exec(
-                    "netstat",
-                    "-tuln",
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                )
-                stdout, stderr = await proc.communicate()
+                from .subprocess_utils import subprocess_exec_with_cleanup
 
-                if proc.returncode == 0:
+                returncode, stdout, stderr = await subprocess_exec_with_cleanup(
+                    "netstat", "-tuln", timeout=5.0
+                )
+
+                if returncode == 0:
                     netstat_output = stdout.decode()
                     for line in netstat_output.splitlines():
                         if f":{port}" in line:
@@ -1899,28 +1885,25 @@ class BundleManager:
             except Exception as e:
                 info["netstat_exception_text"] = str(e)
 
-            # Try curl to test API server on this port
+            # Try aiohttp to test API server on this port
             try:
                 url = f"http://localhost:{port}/api"
-                proc = await asyncio.create_subprocess_exec(
-                    "curl",
-                    "-s",
-                    "-o",
-                    "/dev/null",
-                    "-w",
-                    "%{http_code}",
-                    url,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                )
-                stdout, stderr = await proc.communicate()
+                timeout = aiohttp.ClientTimeout(total=3.0)
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.get(url) as response:
+                        info[f"http_{port}_status_code"] = str(response.status)
 
-                if proc.returncode == 0:
-                    info[f"curl_{port}_status_code"] = stdout.decode().strip()
-                else:
-                    info[f"curl_{port}_error_text"] = stderr.decode()
+                        # Get response body for diagnostics if available
+                        try:
+                            body = await asyncio.wait_for(response.text(), timeout=1.0)
+                            if body:
+                                info[f"http_{port}_response_body"] = body[:200]  # Limit body size
+                        except (asyncio.TimeoutError, UnicodeDecodeError):
+                            pass
+            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                info[f"http_{port}_error_text"] = str(e)
             except Exception as e:
-                info[f"curl_{port}_exception_text"] = str(e)
+                info[f"http_{port}_exception_text"] = str(e)
 
         # Add environment info
         info["env_mock_k8s_api_port"] = os.environ.get("MOCK_K8S_API_PORT", "not set")

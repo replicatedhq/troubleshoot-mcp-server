@@ -202,20 +202,14 @@ class KubectlExecutor:
             # Split the command into parts for security
             cmd = ["kubectl"] + command.split()
 
-            # Run the command
-            process = await asyncio.create_subprocess_exec(
-                *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, env=env
-            )
+            # Run the command with proper cleanup
+            from .subprocess_utils import subprocess_exec_with_cleanup
 
-            # Wait for the command to complete with timeout
             try:
-                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
+                returncode, stdout, stderr = await subprocess_exec_with_cleanup(
+                    *cmd, timeout=timeout, env=env
+                )
             except asyncio.TimeoutError:
-                # Kill the process if it times out
-                try:
-                    process.kill()
-                except ProcessLookupError:
-                    pass
                 raise KubectlError(
                     f"kubectl command timed out after {timeout} seconds",
                     124,
@@ -231,14 +225,12 @@ class KubectlExecutor:
             stderr_str = stderr.decode("utf-8")
 
             # Process the output
-            output, is_json = self._process_output(
-                stdout_str, process.returncode == 0 and json_output
-            )
+            output, is_json = self._process_output(stdout_str, returncode == 0 and json_output)
 
             # Create the result
             result = KubectlResult(
                 command=command,
-                exit_code=process.returncode,
+                exit_code=returncode,
                 stdout=stdout_str,
                 stderr=stderr_str,
                 output=output,
@@ -247,13 +239,11 @@ class KubectlExecutor:
             )
 
             # Log the result
-            if process.returncode == 0:
+            if returncode == 0:
                 logger.info(f"kubectl command completed successfully in {duration_ms}ms")
             else:
-                logger.error(
-                    f"kubectl command failed with exit code {process.returncode}: {stderr_str}"
-                )
-                raise KubectlError("kubectl command failed", process.returncode, stderr_str)
+                logger.error(f"kubectl command failed with exit code {returncode}: {stderr_str}")
+                raise KubectlError("kubectl command failed", returncode, stderr_str)
 
             return result
 

@@ -185,6 +185,7 @@ def test_bundle_in_dir(temp_bundle_dir):
 class TestContainerBundleValidation:
     """Test bundle operations using the production container."""
 
+    @pytest.mark.asyncio
     async def test_container_starts_and_responds(
         self, container_runtime_available, container_image_available, temp_bundle_dir
     ):
@@ -211,6 +212,7 @@ class TestContainerBundleValidation:
         finally:
             await client.stop()
 
+    @pytest.mark.asyncio
     async def test_container_bundle_initialization(
         self,
         container_runtime_available,
@@ -264,6 +266,7 @@ class TestContainerBundleValidation:
         finally:
             await client.stop()
 
+    @pytest.mark.asyncio
     async def test_container_list_bundles(
         self,
         container_runtime_available,
@@ -302,6 +305,7 @@ class TestContainerBundleValidation:
         finally:
             await client.stop()
 
+    @pytest.mark.asyncio
     async def test_container_complete_workflow(
         self,
         container_runtime_available,
