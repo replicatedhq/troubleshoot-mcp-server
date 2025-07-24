@@ -64,6 +64,7 @@ uv run mypy src                   # Type check - MANDATORY
 
 ### Step 1: Final Quality Check
 - [ ] Run complete test suite: `uv run pytest`
+- [ ] Run slow/container tests locally: `uv run pytest -m slow -v` (REQUIRED - these skip in CI)
 - [ ] Run final quality check: `uv run black . && uv run ruff check . && uv run mypy src`
 - [ ] All commands MUST pass
 
@@ -137,7 +138,10 @@ gh repo view --web              # Open repo in browser
 - Unit tests: `uv run pytest -m unit`
 - Integration tests: `uv run pytest -m integration`  
 - E2E tests: `uv run pytest -m e2e`
+- Container tests: `uv run pytest -m container`
 - Specific file: `uv run pytest tests/unit/test_bundle.py -v`
+
+**📋 Complete Testing Strategy**: See [docs/TESTING_STRATEGY.md](docs/TESTING_STRATEGY.md) for comprehensive documentation of our testing approach, CI integration, and local testing commands.
 
 ## ENFORCEMENT RULES
 

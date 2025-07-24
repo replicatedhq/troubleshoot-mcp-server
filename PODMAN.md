@@ -10,8 +10,8 @@ Build the Podman container with the standard Podman build command:
 # Navigate to the project directory
 cd troubleshoot-mcp-server
 
-# Build the image
-podman build -t mcp-server-troubleshoot:latest -f Containerfile .
+# Build the image (uses melange/apko instead of Containerfile)
+./scripts/build.sh
 ```
 
 This will create a Podman image named `mcp-server-troubleshoot:latest`.

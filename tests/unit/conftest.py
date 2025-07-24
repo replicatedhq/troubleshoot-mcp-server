@@ -3,7 +3,6 @@ Configuration for unit tests including async test support.
 """
 
 import os
-import tempfile
 import pytest
 import pytest_asyncio
 from pathlib import Path
@@ -124,6 +123,7 @@ class TestFactory:
         path: Optional[Path] = None,
         kubeconfig_path: Optional[Path] = None,
         initialized: bool = True,
+        tmp_path: Optional[Path] = None,
     ):
         """
         Create a BundleMetadata instance with sensible defaults.
@@ -134,6 +134,7 @@ class TestFactory:
             path: Bundle path
             kubeconfig_path: Path to kubeconfig
             initialized: Whether the bundle is initialized
+            tmp_path: Temporary path for creating bundle directory
 
         Returns:
             BundleMetadata instance
@@ -141,7 +142,10 @@ class TestFactory:
         from mcp_server_troubleshoot.bundle import BundleMetadata
 
         if path is None:
-            path = Path(tempfile.mkdtemp())
+            if tmp_path is None:
+                raise ValueError("Either path or tmp_path must be provided")
+            path = tmp_path / "test_bundle"
+            path.mkdir(parents=True, exist_ok=True)
 
         if kubeconfig_path is None:
             kubeconfig_path = path / "kubeconfig"
@@ -209,18 +213,28 @@ class TestFactory:
 
 
 @pytest.fixture
-def test_factory() -> TestFactory:
+def test_factory(tmp_path) -> TestFactory:
     """
     Provides factory functions for creating common test objects.
 
     These factories reduce boilerplate in tests and ensure consistency
     in test object creation.
     """
-    return TestFactory
+    # Inject tmp_path into the factory for bundle metadata creation
+    original_create_bundle_metadata = TestFactory.create_bundle_metadata
+
+    def create_bundle_metadata_with_path(*args, **kwargs):
+        if "tmp_path" not in kwargs and "path" not in kwargs:
+            kwargs["tmp_path"] = tmp_path
+        return original_create_bundle_metadata(*args, **kwargs)
+
+    factory = TestFactory()
+    factory.create_bundle_metadata = create_bundle_metadata_with_path
+    return factory
 
 
 @pytest.fixture
-def error_setup():
+def error_setup(tmp_path):
     """
     Fixture for testing error scenarios with standard error conditions.
 
@@ -231,7 +245,8 @@ def error_setup():
         Dictionary with common error scenarios and mock objects
     """
     # Create test directory
-    temp_dir = Path(tempfile.mkdtemp())
+    temp_dir = tmp_path / "error_setup"
+    temp_dir.mkdir(exist_ok=True)
 
     # Set up non-existent paths
     nonexistent_path = temp_dir / "nonexistent"
@@ -299,7 +314,7 @@ def fixtures_dir() -> Path:
 
 
 @pytest_asyncio.fixture
-async def mock_command_environment(fixtures_dir):
+async def mock_command_environment(fixtures_dir, tmp_path):
     """
     Creates a test environment with mock sbctl and kubectl binaries.
 
@@ -311,12 +326,14 @@ async def mock_command_environment(fixtures_dir):
 
     Args:
         fixtures_dir: Path to the test fixtures directory (pytest fixture)
+        tmp_path: Temporary path for creating environment directory
 
     Returns:
         A tuple of (temp_dir, old_path) for use in tests
     """
     # Create a temporary directory for the environment
-    temp_dir = Path(tempfile.mkdtemp())
+    temp_dir = tmp_path / "mock_command_env"
+    temp_dir.mkdir(exist_ok=True)
 
     # Set up mock sbctl and kubectl
     mock_sbctl_path = fixtures_dir / "mock_sbctl.py"
@@ -353,11 +370,11 @@ python "{mock_kubectl_path}" "$@"
     finally:
         # Restore the PATH
         os.environ["PATH"] = old_path
-        # Cleanup is handled automatically by tempfile.mkdtemp()
+        # Cleanup is handled automatically by pytest tmp_path
 
 
 @pytest_asyncio.fixture
-async def mock_bundle_manager(fixtures_dir):
+async def mock_bundle_manager(fixtures_dir, tmp_path):
     """
     Creates a mock BundleManager with controlled behavior.
 
@@ -366,6 +383,7 @@ async def mock_bundle_manager(fixtures_dir):
 
     Args:
         fixtures_dir: Path to the test fixtures directory (pytest fixture)
+        tmp_path: Temporary path for creating mock bundle directory
 
     Returns:
         A Mock object with the BundleManager interface
@@ -376,7 +394,8 @@ async def mock_bundle_manager(fixtures_dir):
     mock_manager = Mock(spec=BundleManager)
 
     # Set up common attributes
-    temp_dir = Path(tempfile.mkdtemp())
+    temp_dir = tmp_path / "mock_bundle"
+    temp_dir.mkdir(exist_ok=True)
     mock_bundle = BundleMetadata(
         id="test_bundle",
         source="test_source",
@@ -404,17 +423,12 @@ async def mock_bundle_manager(fixtures_dir):
         }
     )
 
-    try:
-        yield mock_manager
-    finally:
-        # Clean up temporary directory
-        import shutil
-
-        shutil.rmtree(temp_dir)
+    yield mock_manager
+    # Cleanup is handled automatically by pytest tmp_path
 
 
 @pytest.fixture
-def test_file_setup():
+def test_file_setup(tmp_path):
     """
     Creates a test directory with a variety of files for testing file operations.
 
@@ -427,47 +441,43 @@ def test_file_setup():
         Path to the test directory
     """
     # Create a test directory
-    test_dir = Path(tempfile.mkdtemp())
+    test_dir = tmp_path / "test_files"
+    test_dir.mkdir(exist_ok=True)
 
-    try:
-        # Create subdirectories
-        dir1 = test_dir / "dir1"
-        dir1.mkdir()
+    # Create subdirectories
+    dir1 = test_dir / "dir1"
+    dir1.mkdir()
 
-        dir2 = test_dir / "dir2"
-        dir2.mkdir()
-        subdir = dir2 / "subdir"
-        subdir.mkdir()
+    dir2 = test_dir / "dir2"
+    dir2.mkdir()
+    subdir = dir2 / "subdir"
+    subdir.mkdir()
 
-        # Create text files
-        file1 = dir1 / "file1.txt"
-        file1.write_text("This is file 1\nLine 2\nLine 3\n")
+    # Create text files
+    file1 = dir1 / "file1.txt"
+    file1.write_text("This is file 1\nLine 2\nLine 3\n")
 
-        file2 = dir1 / "file2.txt"
-        file2.write_text("This is file 2\nWith some content\n")
+    file2 = dir1 / "file2.txt"
+    file2.write_text("This is file 2\nWith some content\n")
 
-        file3 = subdir / "file3.txt"
-        file3.write_text("This is file 3\nIn a subdirectory\n")
+    file3 = subdir / "file3.txt"
+    file3.write_text("This is file 3\nIn a subdirectory\n")
 
-        # Create a file with specific search patterns
-        search_file = dir1 / "search.txt"
-        search_file.write_text(
-            "This file contains search patterns\n"
-            "UPPERCASE text for case sensitivity tests\n"
-            "lowercase text for the same\n"
-            "Multiple instances of the word pattern\n"
-            "pattern appears again here\n"
-        )
+    # Create a file with specific search patterns
+    search_file = dir1 / "search.txt"
+    search_file.write_text(
+        "This file contains search patterns\n"
+        "UPPERCASE text for case sensitivity tests\n"
+        "lowercase text for the same\n"
+        "Multiple instances of the word pattern\n"
+        "pattern appears again here\n"
+    )
 
-        # Create a binary file
-        binary_file = test_dir / "binary_file"
-        with open(binary_file, "wb") as f:
-            f.write(b"\x00\x01\x02\x03\x04\x05")
+    # Create a binary file
+    binary_file = test_dir / "binary_file"
+    with open(binary_file, "wb") as f:
+        f.write(b"\x00\x01\x02\x03\x04\x05")
 
-        # Return the test directory
-        yield test_dir
-    finally:
-        # Clean up
-        import shutil
-
-        shutil.rmtree(test_dir)
+    # Return the test directory
+    yield test_dir
+    # Cleanup is handled automatically by pytest tmp_path

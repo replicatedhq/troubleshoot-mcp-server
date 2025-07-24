@@ -71,6 +71,16 @@ if ! podman load < "${IMAGE_NAME}.tar"; then
     exit 1
 fi
 
+# Retag the loaded image to the expected tag (apko adds architecture suffix)
+if [[ "${CI:-false}" == "false" ]]; then
+    # For local builds, retag from latest-amd64 to latest
+    echo "Retagging image for local use..."
+    if ! podman tag "${IMAGE_NAME}:latest-amd64" "${IMAGE_NAME}:${IMAGE_TAG}"; then
+        echo "Failed to retag image!"
+        exit 1
+    fi
+fi
+
 echo "✅ Melange/apko build completed successfully!"
 echo "📦 Image: ${IMAGE_NAME}:${IMAGE_TAG}"
 echo "🔧 Includes: sbctl v0.17.2, kubectl v1.33, Python MCP server"

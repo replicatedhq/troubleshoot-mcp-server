@@ -35,7 +35,7 @@ class MCPTestClient:
         """
         self.bundle_dir = bundle_dir
         self.env = env or {}
-        self.process: Optional[subprocess.Popen] = None
+        self.process: Optional[asyncio.subprocess.Process] = None
         self.request_id_counter = 0
 
     async def start_server(self, timeout: float = 10.0) -> None:
@@ -65,15 +65,34 @@ class MCPTestClient:
         logger.info(f"Starting MCP server with command: {cmd}")
 
         try:
-            self.process = subprocess.Popen(
-                cmd,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
+            self.process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
                 env=server_env,
-                bufsize=0,  # Unbuffered for real-time communication
             )
+
+            # Give process a moment to start and check if it's still running
+            await asyncio.sleep(0.2)
+
+            returncode = self.process.returncode
+            if returncode is not None:
+                stderr_output = ""
+                if self.process.stderr:
+                    stderr_bytes = await self.process.stderr.read()
+                    stderr_output = stderr_bytes.decode()
+
+                stdout_output = ""
+                if self.process.stdout:
+                    stdout_bytes = await self.process.stdout.read()
+                    stdout_output = stdout_bytes.decode()
+
+                raise subprocess.SubprocessError(
+                    f"MCP server process terminated immediately with code {returncode}. "
+                    f"STDERR: {stderr_output} STDOUT: {stdout_output}"
+                )
+
         except Exception as e:
             raise subprocess.SubprocessError(f"Failed to start MCP server process: {e}")
 
@@ -81,10 +100,11 @@ class MCPTestClient:
         await asyncio.sleep(0.5)
 
         # Check if the process is still running
-        if self.process.poll() is not None:
+        if self.process.returncode is not None:
             stderr_output = ""
             if self.process.stderr:
-                stderr_output = self.process.stderr.read()
+                stderr_bytes = await self.process.stderr.read()
+                stderr_output = stderr_bytes.decode()
             raise RuntimeError(
                 f"MCP server process terminated immediately with code {self.process.returncode}. "
                 f"Stderr: {stderr_output}"
@@ -134,32 +154,42 @@ class MCPTestClient:
             if self.process.stdin is None:
                 raise RuntimeError("Server stdin is not available")
 
-            # Send the request
-            self.process.stdin.write(request_json + "\n")
-            self.process.stdin.flush()
+            # Send the request using async write
+            self.process.stdin.write((request_json + "\n").encode())
+            await self.process.stdin.drain()
 
-            # Read the response
+            # Read the response with timeout using async readline
             if self.process.stdout is None:
                 raise RuntimeError("Server stdout is not available")
 
-            response_line = self.process.stdout.readline()
+            # Use proper async readline with timeout
+            try:
+                response_bytes = await asyncio.wait_for(
+                    self.process.stdout.readline(),
+                    timeout=60.0,  # 60 second timeout for responses
+                )
+                response_line = response_bytes.decode().strip()
+            except asyncio.TimeoutError:
+                raise RuntimeError("Timeout waiting for response from MCP server")
+
             if not response_line:
                 # Check if process terminated
-                returncode = self.process.poll()
+                returncode = self.process.returncode
                 if returncode is not None:
                     stderr_output = ""
                     if self.process.stderr:
-                        stderr_output = self.process.stderr.read()
+                        stderr_bytes = await self.process.stderr.read()
+                        stderr_output = stderr_bytes.decode()
                     raise RuntimeError(
                         f"Server process terminated with code {returncode}. Stderr: {stderr_output}"
                     )
                 raise RuntimeError("No response received from server")
 
-            logger.debug(f"Received response: {response_line.strip()}")
+            logger.debug(f"Received response: {response_line}")
 
             # Parse JSON response
             try:
-                response = json.loads(response_line.strip())
+                response = json.loads(response_line)
             except json.JSONDecodeError as e:
                 raise json.JSONDecodeError(
                     f"Invalid JSON response: {response_line.strip()}", "", 0
@@ -222,8 +252,8 @@ class MCPTestClient:
             if self.process.stdin is None:
                 raise RuntimeError("Server stdin is not available")
 
-            self.process.stdin.write(notification_json + "\n")
-            self.process.stdin.flush()
+            self.process.stdin.write((notification_json + "\n").encode())
+            await self.process.stdin.drain()
 
         except Exception as e:
             logger.error(f"Error sending notification: {e}")
@@ -291,26 +321,26 @@ class MCPTestClient:
 
             # Wait for graceful shutdown with timeout
             try:
-                self.process.wait(timeout=5.0)
+                await asyncio.wait_for(self.process.wait(), timeout=5.0)
                 logger.info("MCP server shut down gracefully")
-            except subprocess.TimeoutExpired:
+            except asyncio.TimeoutError:
                 logger.warning("MCP server did not shut down gracefully, terminating")
                 self.process.terminate()
 
                 # Give it a moment to terminate
                 try:
-                    self.process.wait(timeout=2.0)
-                except subprocess.TimeoutExpired:
+                    await asyncio.wait_for(self.process.wait(), timeout=2.0)
+                except asyncio.TimeoutError:
                     logger.warning("MCP server did not terminate, killing")
                     self.process.kill()
-                    self.process.wait()
+                    await self.process.wait()
 
         except Exception as e:
             logger.error(f"Error during cleanup: {e}")
             # Force kill as last resort
-            if self.process.poll() is None:
+            if self.process.returncode is None:
                 self.process.kill()
-                self.process.wait()
+                await self.process.wait()
         finally:
             self.process = None
 

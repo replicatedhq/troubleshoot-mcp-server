@@ -3,7 +3,6 @@ Tests for the list_available_bundles method in BundleManager.
 """
 
 import tarfile
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -12,14 +11,12 @@ from mcp_server_troubleshoot.bundle import BundleManager
 
 
 @pytest.fixture
-def temp_bundle_dir():
+def temp_bundle_dir(tmp_path: Path):
     """Create a temporary directory for test bundles."""
-    temp_dir = tempfile.mkdtemp(prefix="test_bundle_dir_")
-    yield Path(temp_dir)
-    # Cleanup
-    import shutil
-
-    shutil.rmtree(temp_dir)
+    temp_dir = tmp_path / "bundles"
+    temp_dir.mkdir()
+    yield temp_dir
+    # No manual cleanup needed - tmp_path handles it automatically
 
 
 @pytest.fixture

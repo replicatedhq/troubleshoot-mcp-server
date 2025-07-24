@@ -5,9 +5,9 @@ These tests validate that the actual built container images work correctly
 in production scenarios, independent of host system setup.
 """
 
+import os
 import pytest
 import subprocess
-import tempfile
 import uuid
 from pathlib import Path
 from .utils import get_container_runtime
@@ -36,58 +36,11 @@ def test_container_has_required_tools_isolated(container_image: str):
     }
 
     for tool_name, expected_path in required_tools.items():
-        # Test 1: Tool exists at expected path
-        result = subprocess.run(
-            [
-                runtime,
-                "run",
-                "--name",
-                f"{container_name}-{tool_name}-path",
-                "--rm",
-                "--entrypoint",
-                "test",
-                container_image,
-                "-f",
-                expected_path,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
+        # For distroless containers, we can't use 'test' command since it's not available.
+        # Instead, we directly try to run the tools which is a more reliable test anyway.
 
-        assert result.returncode == 0, (
-            f"Tool {tool_name} not found at expected path {expected_path} in container. "
-            f"This indicates the tool is not properly packaged. "
-            f"stderr: {result.stderr}"
-        )
-
-        # Test 2: Tool is executable
-        result = subprocess.run(
-            [
-                runtime,
-                "run",
-                "--name",
-                f"{container_name}-{tool_name}-exec",
-                "--rm",
-                "--entrypoint",
-                "test",
-                container_image,
-                "-x",
-                expected_path,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-
-        assert result.returncode == 0, (
-            f"Tool {tool_name} at {expected_path} is not executable in container. "
-            f"stderr: {result.stderr}"
-        )
-
-        # Test 3: Tool can actually run (basic help/version check)
         if tool_name == "sbctl":
-            # sbctl should respond to --help
+            # Test sbctl exists and works
             result = subprocess.run(
                 [
                     runtime,
@@ -95,8 +48,10 @@ def test_container_has_required_tools_isolated(container_image: str):
                     "--name",
                     f"{container_name}-{tool_name}-run",
                     "--rm",
+                    "--entrypoint",
+                    "",
                     container_image,
-                    "sbctl",
+                    expected_path,
                     "--help",
                 ],
                 capture_output=True,
@@ -105,15 +60,77 @@ def test_container_has_required_tools_isolated(container_image: str):
             )
 
             assert result.returncode == 0, (
-                f"sbctl --help failed in container (returncode: {result.returncode}). "
-                f"stdout: {result.stdout}, stderr: {result.stderr}"
+                f"Tool {tool_name} not found or not working at {expected_path} in container. "
+                f"This indicates the tool is not properly packaged. "
+                f"returncode: {result.returncode}, stdout: {result.stdout}, stderr: {result.stderr}"
             )
             assert (
                 "Usage:" in result.stdout or "usage:" in result.stdout
             ), f"sbctl --help output doesn't contain expected usage text: {result.stdout}"
 
+        elif tool_name == "kubectl":
+            # Test kubectl exists and works
+            result = subprocess.run(
+                [
+                    runtime,
+                    "run",
+                    "--name",
+                    f"{container_name}-{tool_name}-run",
+                    "--rm",
+                    "--entrypoint",
+                    "",
+                    container_image,
+                    expected_path,
+                    "version",
+                    "--client",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
 
-def test_container_bundle_initialization_isolated(container_image: str, temp_bundles_directory):
+            assert result.returncode == 0, (
+                f"Tool {tool_name} not found or not working at {expected_path} in container. "
+                f"This indicates the tool is not properly packaged. "
+                f"returncode: {result.returncode}, stdout: {result.stdout}, stderr: {result.stderr}"
+            )
+            assert (
+                "Client Version:" in result.stdout
+            ), f"kubectl version output doesn't contain expected version text: {result.stdout}"
+
+        elif tool_name == "python3":
+            # Test python3 exists and works
+            result = subprocess.run(
+                [
+                    runtime,
+                    "run",
+                    "--name",
+                    f"{container_name}-{tool_name}-run",
+                    "--rm",
+                    "--entrypoint",
+                    "",
+                    container_image,
+                    expected_path,
+                    "--version",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+
+            assert result.returncode == 0, (
+                f"Tool {tool_name} not found or not working at {expected_path} in container. "
+                f"This indicates the tool is not properly packaged. "
+                f"returncode: {result.returncode}, stdout: {result.stdout}, stderr: {result.stderr}"
+            )
+            assert (
+                "Python" in result.stdout
+            ), f"python3 --version output doesn't contain expected version text: {result.stdout}"
+
+
+def test_container_bundle_initialization_isolated(
+    container_image: str, temp_bundles_directory, tmp_path: Path
+):
     """
     Test that bundle initialization works using only container tools.
 
@@ -126,36 +143,41 @@ def test_container_bundle_initialization_isolated(container_image: str, temp_bun
     container_name = f"bundle-init-test-{uuid.uuid4().hex[:8]}"
 
     # Create a minimal test bundle structure
-    test_bundle_dir = Path(tempfile.mkdtemp())
-    try:
-        # Create a simple test bundle with minimal cluster resource
-        cluster_resource = {
-            "apiVersion": "v1",
-            "kind": "Namespace",
-            "metadata": {"name": "test-namespace"},
-        }
+    test_bundle_dir = tmp_path / "test_bundle"
+    test_bundle_dir.mkdir()
+    # No manual cleanup needed - tmp_path handles it automatically
 
-        import json
+    # Create a simple test bundle with minimal cluster resource
+    cluster_resource = {
+        "apiVersion": "v1",
+        "kind": "Namespace",
+        "metadata": {"name": "test-namespace"},
+    }
 
-        resource_file = test_bundle_dir / "cluster-resources.json"
-        with open(resource_file, "w") as f:
-            json.dump(cluster_resource, f)
+    import json
 
-        # Test that the MCP server can start and the bundle initialization logic works
-        # We'll test the sbctl availability check specifically
-        result = subprocess.run(
-            [
-                runtime,
-                "run",
-                "--name",
-                container_name,
-                "--rm",
-                "-v",
-                f"{test_bundle_dir}:/test-bundle",
-                container_image,
-                "python3",
-                "-c",
-                """
+    resource_file = test_bundle_dir / "cluster-resources.json"
+    with open(resource_file, "w") as f:
+        json.dump(cluster_resource, f)
+
+    # Test that the MCP server can start and the bundle initialization logic works
+    # We'll test the sbctl availability check specifically
+    # Need to override entrypoint to run python directly
+    result = subprocess.run(
+        [
+            runtime,
+            "run",
+            "--name",
+            container_name,
+            "--rm",
+            "--entrypoint",
+            "",
+            "-v",
+            f"{test_bundle_dir}:/test-bundle",
+            container_image,
+            "/usr/bin/python3",
+            "-c",
+            """
 import asyncio
 import sys
 sys.path.insert(0, '/usr/lib/python3.13/site-packages')
@@ -179,28 +201,22 @@ async def test_sbctl_check():
 
 asyncio.run(test_sbctl_check())
 """,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
 
-        assert result.returncode == 0, (
-            f"Container sbctl availability check failed. "
-            f"This indicates sbctl is not properly installed in the container. "
-            f"stdout: {result.stdout}, stderr: {result.stderr}"
-        )
+    assert result.returncode == 0, (
+        f"Container sbctl availability check failed. "
+        f"This indicates sbctl is not properly installed in the container. "
+        f"stdout: {result.stdout}, stderr: {result.stderr}"
+    )
 
-        assert "PASS: sbctl is available" in result.stdout, (
-            f"sbctl availability check didn't pass as expected. "
-            f"stdout: {result.stdout}, stderr: {result.stderr}"
-        )
-
-    finally:
-        # Clean up
-        import shutil
-
-        shutil.rmtree(test_bundle_dir, ignore_errors=True)
+    assert "PASS: sbctl is available" in result.stdout, (
+        f"sbctl availability check didn't pass as expected. "
+        f"stdout: {result.stdout}, stderr: {result.stderr}"
+    )
 
 
 def test_container_isolated_from_host_tools():
@@ -243,6 +259,11 @@ def test_production_container_mcp_protocol():
     runtime, available = get_container_runtime()
     if not available:
         pytest.skip(f"Container runtime {runtime} not available")
+
+    # Skip in CI due to container build requirements
+    # The publish workflow validates container functionality
+    if os.environ.get("CI") == "true":
+        pytest.skip("Container runtime tests are skipped in CI - run locally with 'pytest -m slow'")
 
     container_name = f"mcp-protocol-test-{uuid.uuid4().hex[:8]}"
 

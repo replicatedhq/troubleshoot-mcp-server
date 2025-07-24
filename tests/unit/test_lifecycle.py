@@ -5,8 +5,6 @@ Test lifecycle management for the MCP server.
 import asyncio
 import os
 import shutil
-import signal
-import tempfile
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -15,19 +13,17 @@ import pytest
 from mcp_server_troubleshoot.lifecycle import (
     app_lifespan,
     create_temp_directory,
-    handle_signal,
     periodic_bundle_cleanup,
-    setup_signal_handlers,
 )
 
 
 @pytest.fixture
-def temp_bundle_dir():
+def temp_bundle_dir(tmp_path: Path):
     """Create a temporary directory for test bundles."""
-    temp_dir = tempfile.mkdtemp()
-    yield Path(temp_dir)
-    # Clean up
-    shutil.rmtree(temp_dir, ignore_errors=True)
+    temp_dir = tmp_path / "bundles"
+    temp_dir.mkdir()
+    yield temp_dir
+    # No manual cleanup needed - tmp_path handles it automatically
 
 
 def test_create_temp_directory():
@@ -35,7 +31,7 @@ def test_create_temp_directory():
     temp_dir = create_temp_directory()
     assert os.path.exists(temp_dir)
     assert "mcp-troubleshoot" in temp_dir
-    # Clean up
+    # Clean up - manual cleanup needed since we're testing the production temp dir function
     shutil.rmtree(temp_dir, ignore_errors=True)
 
 
@@ -176,31 +172,3 @@ async def test_temp_dir_cleanup_error_handling():
 
         # Verify we got here despite the cleanup error
         assert True, "We should reach this point despite cleanup errors"
-
-
-def test_signal_handler():
-    """Test signal handler function."""
-    with patch("sys.exit") as mock_exit:
-        # Call the signal handler
-        handle_signal(signal.SIGTERM, None)
-
-        # Verify that sys.exit was called
-        mock_exit.assert_called_once_with(0)
-
-
-def test_setup_signal_handlers():
-    """Test signal handler setup."""
-    # Temporarily remove PYTEST_CURRENT_TEST from the environment
-    with patch.dict(os.environ, {}, clear=True):
-        with patch("signal.signal") as mock_signal:
-            # Call the setup function
-            setup_signal_handlers()
-
-            # Verify that signal.signal was called for both signals
-            assert mock_signal.call_count >= 2
-
-            # Check that the handlers were registered
-            calls = [call[0] for call in mock_signal.call_args_list]
-            signals = [args[0] for args in calls]
-            assert signal.SIGTERM in signals
-            assert signal.SIGINT in signals

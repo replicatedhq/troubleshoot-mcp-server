@@ -20,8 +20,8 @@ A Model Context Protocol (MCP) server for AI models to interact with Kubernetes 
 The easiest way to get started is using Podman:
 
 ```bash
-# Build the image
-podman build -t mcp-server-troubleshoot:latest -f Containerfile .
+# Build the image (uses melange/apko instead of Containerfile)
+./scripts/build.sh
 
 # Run the server
 podman run -i --rm \

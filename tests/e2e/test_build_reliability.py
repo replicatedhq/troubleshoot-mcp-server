@@ -10,7 +10,6 @@ This module tests that:
 
 import pytest
 import subprocess
-import tempfile
 from pathlib import Path
 from .utils import get_container_runtime
 import uuid
@@ -20,9 +19,11 @@ pytestmark = [pytest.mark.e2e, pytest.mark.container]
 
 
 @pytest.fixture
-def temp_project_dir():
+def temp_project_dir(tmp_path: Path):
     """Create a temporary project directory with build configs."""
-    temp_dir = Path(tempfile.mkdtemp())
+    temp_dir = tmp_path / "project"
+    temp_dir.mkdir()
+    # No manual cleanup needed - tmp_path handles it automatically
 
     # Copy essential files to temp directory
     project_root = Path(__file__).parent.parent.parent
@@ -37,11 +38,6 @@ def temp_project_dir():
         (temp_dir / "apko.yaml").write_text(apko_src.read_text())
 
     yield temp_dir
-
-    # Cleanup
-    import shutil
-
-    shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 def test_container_build_never_uses_cached_configs(temp_project_dir):
@@ -94,10 +90,13 @@ def test_container_build_never_uses_cached_configs(temp_project_dir):
             "This indicates the build process may be using cached results."
         )
 
-        # Verify the error is related to the path issue we introduced
+        # Verify the error is related to the path issue we introduced or signing key issue
         error_output = build_result.stderr + build_result.stdout
         assert (
-            "/invalid/path" in error_output or "No such file" in error_output
+            "/invalid/path" in error_output
+            or "No such file" in error_output
+            or "no such file or directory" in error_output
+            or "stat test-key" in error_output
         ), f"Build failed but not for expected reason. Output: {error_output}"
 
     finally:

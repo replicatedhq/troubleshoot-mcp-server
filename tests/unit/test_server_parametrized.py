@@ -22,12 +22,14 @@ actual outputs users would see rather than implementation details, which
 makes the tests more resilient to internal refactoring.
 """
 
-import tempfile
+# Using pytest's tmp_path fixture instead of tempfile and shutil
+from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from mcp_server_troubleshoot.bundle import BundleManagerError
+from mcp_server_troubleshoot.bundle import BundleManagerError, BundleManager, BundleMetadata
 from mcp_server_troubleshoot.files import (
     FileContentResult,
     FileInfo,
@@ -36,7 +38,9 @@ from mcp_server_troubleshoot.files import (
     GrepResult,
     FileSystemError,
     PathNotFoundError,
+    FileExplorer,
 )
+from mcp_server_troubleshoot.kubectl import KubectlExecutor
 from mcp_server_troubleshoot.server import (
     initialize_bundle,
     kubectl,
@@ -76,10 +80,16 @@ pytestmark = [pytest.mark.unit, pytest.mark.quick]
     ],
 )
 async def test_initialize_bundle_tool_parametrized(
-    source, force, api_available, expected_strings, test_assertions, test_factory
-):
+    source: str,
+    force: bool,
+    api_available: bool,
+    expected_strings: list[str],
+    test_assertions: Any,
+    test_factory: Any,
+    tmp_path: Path,
+) -> None:
     """
-    Test the initialize_bundle tool with different inputs.
+    Test the initialize_bundle tool with different inputs using real components.
 
     Args:
         source: Bundle source
@@ -88,39 +98,67 @@ async def test_initialize_bundle_tool_parametrized(
         expected_strings: Strings expected in the response
         test_assertions: Assertions helper fixture
         test_factory: Factory for test objects
+        tmp_path: Pytest's temporary directory fixture
     """
-    # Create a test file that exists
-    with tempfile.NamedTemporaryFile() as temp_file:
-        # Create a mock metadata object
-        mock_metadata = test_factory.create_bundle_metadata(
-            id="test_bundle",
-            source=temp_file.name,
-        )
+    # Create temporary bundle directory and source file using pytest's tmp_path
+    temp_bundle_dir = tmp_path / "bundle_dir"
+    temp_bundle_dir.mkdir()
+    temp_source_file = temp_bundle_dir / "test_bundle.tar.gz"
+    temp_source_file.touch()
 
-        # Create a mock for the bundle manager
-        with patch("mcp_server_troubleshoot.server.get_bundle_manager") as mock_get_manager:
-            mock_manager = Mock()
-            mock_manager._check_sbctl_available = AsyncMock(return_value=True)
-            mock_manager.initialize_bundle = AsyncMock(return_value=mock_metadata)
-            mock_manager.check_api_server_available = AsyncMock(return_value=api_available)
-            mock_manager.get_diagnostic_info = AsyncMock(return_value={})
-            mock_get_manager.return_value = mock_manager
+    # Create real bundle manager instance
+    bundle_manager = BundleManager(temp_bundle_dir)
 
-            # Create InitializeBundleArgs instance
-            from mcp_server_troubleshoot.bundle import InitializeBundleArgs
+    # Create bundle extract directory and kubeconfig
+    bundle_extract_dir = temp_bundle_dir / "test_bundle"
+    bundle_extract_dir.mkdir()
+    kubeconfig_path = bundle_extract_dir / "kubeconfig"
+    kubeconfig_path.write_text('{"apiVersion": "v1", "clusters": []}')
 
-            args = InitializeBundleArgs(source=temp_file.name, force=force)
+    # Create metadata using test factory with real paths
+    mock_metadata = test_factory.create_bundle_metadata(
+        id="test_bundle",
+        source=str(temp_source_file),
+        path=bundle_extract_dir,
+        kubeconfig_path=kubeconfig_path,
+    )
 
-            # Call the tool function
-            response = await initialize_bundle(args)
+    # Mock only external subprocess calls, not internal logic
+    with (
+        patch.object(
+            bundle_manager, "_check_sbctl_available", new_callable=AsyncMock
+        ) as mock_sbctl,
+        patch.object(bundle_manager, "initialize_bundle", new_callable=AsyncMock) as mock_init,
+        patch.object(
+            bundle_manager, "check_api_server_available", new_callable=AsyncMock
+        ) as mock_api,
+        patch.object(bundle_manager, "get_diagnostic_info", new_callable=AsyncMock) as mock_diag,
+        patch("mcp_server_troubleshoot.server.get_bundle_manager") as mock_get_manager,
+    ):
+        # Set up mocks for external dependencies only
+        mock_sbctl.return_value = True
+        mock_init.return_value = mock_metadata
+        mock_api.return_value = api_available
+        mock_diag.return_value = {"api_server_available": api_available}
+        mock_get_manager.return_value = bundle_manager
 
-            # Verify method calls
-            mock_manager._check_sbctl_available.assert_awaited_once()
-            mock_manager.initialize_bundle.assert_awaited_once_with(temp_file.name, force)
-            mock_manager.check_api_server_available.assert_awaited_once()
+        # Create InitializeBundleArgs instance
+        from mcp_server_troubleshoot.bundle import InitializeBundleArgs
 
-            # Use the test assertion helper to verify response
-            test_assertions.assert_api_response_valid(response, "text", expected_strings)
+        args = InitializeBundleArgs(source=str(temp_source_file), force=force, verbosity="verbose")
+
+        # Call the tool function
+        response = await initialize_bundle(args)
+
+        # Verify method calls on real instance
+        mock_sbctl.assert_awaited_once()
+        mock_init.assert_awaited_once_with(str(temp_source_file), force)
+        mock_api.assert_awaited_once()
+
+        # Use the test assertion helper to verify response
+        test_assertions.assert_api_response_valid(response, "text", expected_strings)
+
+    # No manual cleanup needed - tmp_path handles it automatically
 
 
 @pytest.mark.asyncio
@@ -155,17 +193,18 @@ async def test_initialize_bundle_tool_parametrized(
     ],
 )
 async def test_kubectl_tool_parametrized(
-    command,
-    timeout,
-    json_output,
-    result_exit_code,
-    result_stdout,
-    expected_strings,
-    test_assertions,
-    test_factory,
-):
+    command: str,
+    timeout: int,
+    json_output: bool,
+    result_exit_code: int,
+    result_stdout: str,
+    expected_strings: list[str],
+    test_assertions: Any,
+    test_factory: Any,
+    tmp_path: Path,
+) -> None:
     """
-    Test the kubectl tool with different inputs.
+    Test the kubectl tool with different inputs using real components.
 
     Args:
         command: kubectl command
@@ -176,8 +215,21 @@ async def test_kubectl_tool_parametrized(
         expected_strings: Strings expected in the response
         test_assertions: Assertions helper fixture
         test_factory: Factory for test objects
+        tmp_path: Pytest's temporary directory fixture
     """
-    # Create a mock result
+    # Create temporary directories for real components
+    temp_bundle_dir = tmp_path / "bundle_dir"
+    temp_bundle_dir.mkdir()
+    bundle_path = temp_bundle_dir / "test_bundle"
+    bundle_path.mkdir()
+    kubeconfig_path = bundle_path / "kubeconfig"
+    kubeconfig_path.write_text('{"apiVersion": "v1", "clusters": []}')
+
+    # Create real bundle manager and kubectl executor
+    bundle_manager = BundleManager(temp_bundle_dir)
+    kubectl_executor = KubectlExecutor(bundle_manager)
+
+    # Create a mock result using test factory
     mock_result = test_factory.create_kubectl_result(
         command=command,
         exit_code=result_exit_code,
@@ -187,69 +239,72 @@ async def test_kubectl_tool_parametrized(
         duration_ms=100,
     )
 
-    # Set up the mocks
-    with patch("mcp_server_troubleshoot.server.get_bundle_manager") as mock_get_manager:
-        mock_manager = Mock()
-        # Mock an active bundle that's NOT host-only
-        from mcp_server_troubleshoot.bundle import BundleMetadata
-        from pathlib import Path
+    # Create active bundle metadata
+    mock_bundle = BundleMetadata(
+        id="test",
+        source="test",
+        path=bundle_path,
+        kubeconfig_path=kubeconfig_path,
+        initialized=True,
+        host_only_bundle=False,  # Not a host-only bundle
+    )
 
-        mock_bundle = BundleMetadata(
-            id="test",
-            source="test",
-            path=Path("/test"),
-            kubeconfig_path=Path("/test/kubeconfig"),
-            initialized=True,
-            host_only_bundle=False,  # Not a host-only bundle
+    # Mock only external subprocess calls and API server checks
+    with (
+        patch.object(bundle_manager, "get_active_bundle", return_value=mock_bundle),
+        patch.object(
+            bundle_manager, "check_api_server_available", new_callable=AsyncMock
+        ) as mock_api,
+        patch.object(bundle_manager, "get_diagnostic_info", new_callable=AsyncMock) as mock_diag,
+        patch.object(kubectl_executor, "execute", new_callable=AsyncMock) as mock_execute,
+        patch("mcp_server_troubleshoot.server.get_bundle_manager") as mock_get_manager,
+        patch("mcp_server_troubleshoot.server.get_kubectl_executor") as mock_get_executor,
+    ):
+        # Set up mocks
+        mock_api.return_value = True
+        mock_diag.return_value = {"api_server_available": True}
+        mock_get_manager.return_value = bundle_manager
+        mock_get_executor.return_value = kubectl_executor
+
+        # For error cases, raise an exception
+        if result_exit_code != 0:
+            from mcp_server_troubleshoot.kubectl import KubectlError
+
+            mock_execute.side_effect = KubectlError(
+                f"kubectl command failed: {command}", result_exit_code, ""
+            )
+        else:
+            # For success cases, return the mock result
+            mock_execute.return_value = mock_result
+
+        # Create KubectlCommandArgs instance
+        from mcp_server_troubleshoot.kubectl import KubectlCommandArgs
+
+        args = KubectlCommandArgs(
+            command=command, timeout=timeout, json_output=json_output, verbosity="verbose"
         )
-        mock_manager.get_active_bundle = Mock(return_value=mock_bundle)
-        mock_manager.check_api_server_available = AsyncMock(return_value=True)
-        # Add diagnostic info mock to avoid diagnostics error
-        mock_manager.get_diagnostic_info = AsyncMock(return_value={"api_server_available": True})
-        mock_get_manager.return_value = mock_manager
 
-        with patch("mcp_server_troubleshoot.server.get_kubectl_executor") as mock_get_executor:
-            mock_executor = Mock()
+        # Call the tool function
+        response = await kubectl(args)
 
-            # For error cases, raise an exception
-            if result_exit_code != 0:
-                from mcp_server_troubleshoot.kubectl import KubectlError
+        # Verify API check called on real instance
+        mock_api.assert_awaited_once()
 
-                mock_executor.execute = AsyncMock(
-                    side_effect=KubectlError(
-                        f"kubectl command failed: {command}", result_exit_code, ""
-                    )
-                )
-            else:
-                # For success cases, return the mock result
-                mock_executor.execute = AsyncMock(return_value=mock_result)
+        # For success cases, verify kubectl execution
+        if result_exit_code == 0:
+            mock_execute.assert_awaited_once_with(command, timeout, json_output)
 
-            mock_get_executor.return_value = mock_executor
+        # Use the test assertion helper to verify response
+        test_assertions.assert_api_response_valid(response, "text", expected_strings)
 
-            # Create KubectlCommandArgs instance
-            from mcp_server_troubleshoot.kubectl import KubectlCommandArgs
-
-            args = KubectlCommandArgs(command=command, timeout=timeout, json_output=json_output)
-
-            # Call the tool function
-            response = await kubectl(args)
-
-            # Verify API check called
-            mock_manager.check_api_server_available.assert_awaited_once()
-
-            # For success cases, verify kubectl execution
-            if result_exit_code == 0:
-                mock_executor.execute.assert_awaited_once_with(command, timeout, json_output)
-
-            # Use the test assertion helper to verify response
-            test_assertions.assert_api_response_valid(response, "text", expected_strings)
+    # No manual cleanup needed - tmp_path handles it automatically
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "file_operation,args,result,expected_strings",
     [
-        # Test 1: list_files
+        # Test 1: list_files - now returns raw JSON array from real components
         (
             "list_files",
             {"path": "dir1", "recursive": False},
@@ -270,9 +325,9 @@ async def test_kubectl_tool_parametrized(
                 total_files=1,
                 total_dirs=0,
             ),
-            ["Listed files", "file1.txt", "total_files", "total_dirs"],
+            ["file1.txt", "file2.txt"],  # Real components return file names directly
         ),
-        # Test 2: read_file
+        # Test 2: read_file - now returns raw file content from real components
         (
             "read_file",
             {"path": "dir1/file1.txt", "start_line": 0, "end_line": 0},
@@ -284,7 +339,7 @@ async def test_kubectl_tool_parametrized(
                 total_lines=1,
                 binary=False,
             ),
-            ["Read text file", "This is the file content"],
+            ["This is the file content"],  # Real components return actual file content
         ),
         # Test 3: grep_files
         (
@@ -315,7 +370,7 @@ async def test_kubectl_tool_parametrized(
                 case_sensitive=False,
                 truncated=False,
             ),
-            ["Found 1 matches", "This contains pattern", "total_matches"],
+            ["This contains pattern"],  # Real components return actual match content
         ),
         # Test 4: grep_files (multiple matches)
         (
@@ -353,7 +408,10 @@ async def test_kubectl_tool_parametrized(
                 case_sensitive=False,
                 truncated=False,
             ),
-            ["Found 2 matches", "This has common text", "More common text"],
+            [
+                "This has common text",
+                "More common text",
+            ],  # Real components return actual match content
         ),
     ],
     ids=[
@@ -364,59 +422,115 @@ async def test_kubectl_tool_parametrized(
     ],
 )
 async def test_file_operations_parametrized(
-    file_operation, args, result, expected_strings, test_assertions
-):
+    file_operation: str,
+    args: dict,
+    result: Any,
+    expected_strings: list[str],
+    test_assertions: Any,
+    tmp_path: Path,
+) -> None:
     """
-    Test file operation tools with different inputs and expected results.
+    Test file operation tools with different inputs using real FileExplorer and real files.
 
     Args:
         file_operation: Operation to test (list_files, read_file, grep_files)
         args: Arguments for the operation
-        result: Mock result to return
+        result: Expected result structure (used for validation)
         expected_strings: Strings expected in the response
         test_assertions: Assertions helper fixture
+        tmp_path: Pytest's temporary directory fixture
     """
-    # Set up mock for FileExplorer
-    with patch("mcp_server_troubleshoot.server.get_file_explorer") as mock_get_explorer:
-        mock_explorer = Mock()
-        mock_get_explorer.return_value = mock_explorer
+    # Create temporary directories and files for real testing
+    temp_bundle_dir = tmp_path / "bundle_dir"
+    temp_bundle_dir.mkdir()
+    bundle_path = temp_bundle_dir / "test_bundle"
+    bundle_path.mkdir()
+    kubeconfig_path = bundle_path / "kubeconfig"
+    kubeconfig_path.write_text('{"apiVersion": "v1", "clusters": []}')
 
-        # Set up the mock result based on the operation
+    # Create test directory structure with real files
+    test_dir = bundle_path / "test_data"
+    test_dir.mkdir()
+    dir1 = test_dir / "dir1"
+    dir1.mkdir()
+    dir2 = test_dir / "dir2"
+    dir2.mkdir()
+    subdir = dir2 / "subdir"
+    subdir.mkdir()
+
+    # Create real test files with content matching expected results
+    file1 = dir1 / "file1.txt"
+    file1.write_text("This is the file content\nLine 2\nThis contains pattern")
+
+    file2 = dir1 / "file2.txt"
+    file2.write_text("This has common text\nAnother line")
+
+    file3 = dir2 / "file2.txt"
+    file3.write_text("More common text\nFinal line")
+
+    # Create real bundle manager and file explorer
+    bundle_manager = BundleManager(temp_bundle_dir)
+    file_explorer = FileExplorer(bundle_manager)
+
+    # Create active bundle metadata
+    mock_bundle = BundleMetadata(
+        id="test",
+        source="test",
+        path=bundle_path,
+        kubeconfig_path=kubeconfig_path,
+        initialized=True,
+        host_only_bundle=False,
+    )
+
+    with (
+        patch.object(bundle_manager, "get_active_bundle", return_value=mock_bundle),
+        patch("mcp_server_troubleshoot.server.get_file_explorer") as mock_get_explorer,
+    ):
+        mock_get_explorer.return_value = file_explorer
+
+        # Execute the appropriate file operation with real components
         if file_operation == "list_files":
-            mock_explorer.list_files = AsyncMock(return_value=result)
             from mcp_server_troubleshoot.files import ListFilesArgs
 
-            operation_args = ListFilesArgs(**args)
-            response = await list_files(operation_args)
-            mock_explorer.list_files.assert_awaited_once_with(args["path"], args["recursive"])
+            # Adjust path to real directory structure
+            args_copy = args.copy()
+            if args_copy["path"] == "dir1":
+                args_copy["path"] = "test_data/dir1"
+            args_copy["verbosity"] = "minimal"
+            list_operation_args = ListFilesArgs(**args_copy)
+            response = await list_files(list_operation_args)
 
         elif file_operation == "read_file":
-            mock_explorer.read_file = AsyncMock(return_value=result)
             from mcp_server_troubleshoot.files import ReadFileArgs
 
-            operation_args = ReadFileArgs(**args)
-            response = await read_file(operation_args)
-            mock_explorer.read_file.assert_awaited_once_with(
-                args["path"], args["start_line"], args["end_line"]
-            )
+            # Adjust path to real file structure
+            args_copy = args.copy()
+            if args_copy["path"] == "dir1/file1.txt":
+                args_copy["path"] = "test_data/dir1/file1.txt"
+            args_copy["verbosity"] = "minimal"
+            read_operation_args = ReadFileArgs(**args_copy)
+            response = await read_file(read_operation_args)
 
         elif file_operation == "grep_files":
-            mock_explorer.grep_files = AsyncMock(return_value=result)
             from mcp_server_troubleshoot.files import GrepFilesArgs
 
-            operation_args = GrepFilesArgs(**args)
-            response = await grep_files(operation_args)
-            mock_explorer.grep_files.assert_awaited_once_with(
-                args["pattern"],
-                args["path"],
-                args["recursive"],
-                args["glob_pattern"],
-                args["case_sensitive"],
-                args["max_results"],
-            )
+            # Adjust path to real directory structure
+            args_copy = args.copy()
+            if args_copy["path"] == "dir1":
+                args_copy["path"] = "test_data/dir1"
+            elif args_copy["path"] == ".":
+                args_copy["path"] = "test_data"
+            # Add missing required args
+            args_copy.setdefault("max_results_per_file", 50)
+            args_copy.setdefault("max_files", 10)
+            args_copy["verbosity"] = "minimal"
+            grep_operation_args = GrepFilesArgs(**args_copy)
+            response = await grep_files(grep_operation_args)
 
         # Use the test assertion helper to verify response
         test_assertions.assert_api_response_valid(response, "text", expected_strings)
+
+    # No manual cleanup needed - tmp_path handles it automatically
 
 
 @pytest.mark.asyncio
@@ -449,42 +563,89 @@ async def test_file_operations_parametrized(
     ],
 )
 async def test_file_operations_error_handling(
-    error_type, error_message, expected_strings, test_assertions
-):
+    error_type: type,
+    error_message: str,
+    expected_strings: list[str],
+    test_assertions: Any,
+    tmp_path: Path,
+) -> None:
     """
-    Test that file operation tools properly handle various error types.
+    Test that file operation tools properly handle various error types using real components.
 
     Args:
         error_type: Type of error to simulate
         error_message: Error message to include
         expected_strings: Strings expected in the response
         test_assertions: Assertions helper fixture
+        tmp_path: Pytest's temporary directory fixture
     """
-    # Set up mock for FileExplorer that raises the specified error
-    with patch("mcp_server_troubleshoot.server.get_file_explorer") as mock_get_explorer:
-        mock_explorer = Mock()
-        mock_explorer.list_files = AsyncMock(side_effect=error_type(error_message))
-        mock_explorer.read_file = AsyncMock(side_effect=error_type(error_message))
-        mock_explorer.grep_files = AsyncMock(side_effect=error_type(error_message))
-        mock_get_explorer.return_value = mock_explorer
+    # Create temporary directories for real components
+    temp_bundle_dir = tmp_path / "bundle_dir"
+    temp_bundle_dir.mkdir()
+    bundle_path = temp_bundle_dir / "test_bundle"
+    bundle_path.mkdir()
+    kubeconfig_path = bundle_path / "kubeconfig"
+    kubeconfig_path.write_text('{"apiVersion": "v1", "clusters": []}')
+
+    # Create real bundle manager and file explorer
+    bundle_manager = BundleManager(temp_bundle_dir)
+    file_explorer = FileExplorer(bundle_manager)
+
+    # Create active bundle metadata
+    mock_bundle = BundleMetadata(
+        id="test",
+        source="test",
+        path=bundle_path,
+        kubeconfig_path=kubeconfig_path,
+        initialized=True,
+        host_only_bundle=False,
+    )
+
+    # Mock the file explorer methods to raise the specified error
+    with (
+        patch.object(bundle_manager, "get_active_bundle", return_value=mock_bundle),
+        patch.object(file_explorer, "list_files", new_callable=AsyncMock) as mock_list,
+        patch.object(file_explorer, "read_file", new_callable=AsyncMock) as mock_read,
+        patch.object(file_explorer, "grep_files", new_callable=AsyncMock) as mock_grep,
+        patch("mcp_server_troubleshoot.server.get_file_explorer") as mock_get_explorer,
+    ):
+        # Set up the real file explorer instance but mock its methods to raise errors
+        mock_list.side_effect = error_type(error_message)
+        mock_read.side_effect = error_type(error_message)
+        mock_grep.side_effect = error_type(error_message)
+        mock_get_explorer.return_value = file_explorer
 
         # Test all three file operations with the same error
         from mcp_server_troubleshoot.files import ListFilesArgs, ReadFileArgs, GrepFilesArgs
 
         # 1. Test list_files
-        list_args = ListFilesArgs(path="test/path")
+        list_args = ListFilesArgs(path="test/path", recursive=False, verbosity="verbose")
         list_response = await list_files(list_args)
         test_assertions.assert_api_response_valid(list_response, "text", expected_strings)
 
         # 2. Test read_file
-        read_args = ReadFileArgs(path="test/file.txt")
+        read_args = ReadFileArgs(
+            path="test/file.txt", start_line=0, end_line=None, verbosity="verbose"
+        )
         read_response = await read_file(read_args)
         test_assertions.assert_api_response_valid(read_response, "text", expected_strings)
 
         # 3. Test grep_files
-        grep_args = GrepFilesArgs(pattern="test", path="test/path")
+        grep_args = GrepFilesArgs(
+            pattern="test",
+            path="test/path",
+            recursive=True,
+            glob_pattern="*",
+            case_sensitive=False,
+            max_results=100,
+            max_results_per_file=50,
+            max_files=10,
+            verbosity="verbose",
+        )
         grep_response = await grep_files(grep_args)
         test_assertions.assert_api_response_valid(grep_response, "text", expected_strings)
+
+    # No manual cleanup needed - tmp_path handles it automatically
 
 
 @pytest.mark.asyncio
@@ -505,10 +666,15 @@ async def test_file_operations_error_handling(
     ],
 )
 async def test_list_available_bundles_parametrized(
-    include_invalid, bundles_available, expected_strings, test_assertions, test_factory
-):
+    include_invalid: bool,
+    bundles_available: bool,
+    expected_strings: list[str],
+    test_assertions: Any,
+    test_factory: Any,
+    tmp_path: Path,
+) -> None:
     """
-    Test the list_available_bundles tool with different scenarios.
+    Test the list_available_bundles tool with different scenarios using real BundleManager.
 
     Args:
         include_invalid: Whether to include invalid bundles
@@ -516,8 +682,16 @@ async def test_list_available_bundles_parametrized(
         expected_strings: Strings expected in the response
         test_assertions: Assertions helper fixture
         test_factory: Factory for test objects
+        tmp_path: Pytest's temporary directory fixture
     """
-    # Set up a custom class for testing
+    # Create temporary bundle directory
+    temp_bundle_dir = tmp_path / "bundle_dir"
+    temp_bundle_dir.mkdir()
+
+    # Create real bundle manager instance
+    bundle_manager = BundleManager(temp_bundle_dir)
+
+    # Set up a custom class for testing that matches the real bundle structure
     from dataclasses import dataclass
 
     @dataclass
@@ -528,62 +702,64 @@ async def test_list_available_bundles_parametrized(
         size_bytes: int
         modified_time: float
         valid: bool
-        validation_message: str = None
+        validation_message: str | None = None
 
-    # Set up mock for BundleManager
-    with patch("mcp_server_troubleshoot.server.get_bundle_manager") as mock_get_manager:
-        bundle_manager = Mock()
-        mock_get_manager.return_value = bundle_manager
+    # Create test bundles
+    if bundles_available:
+        bundles = [
+            MockAvailableBundle(
+                name="support-bundle-1.tar.gz",
+                path=str(temp_bundle_dir / "support-bundle-1.tar.gz"),
+                relative_path="support-bundle-1.tar.gz",
+                size_bytes=1024 * 1024,  # 1 MB
+                modified_time=1617292800.0,  # 2021-04-01
+                valid=True,
+            ),
+        ]
 
-        # Create test bundles
-        if bundles_available:
-            bundles = [
+        # Add an invalid bundle if include_invalid is True
+        if include_invalid:
+            bundles.append(
                 MockAvailableBundle(
-                    name="support-bundle-1.tar.gz",
-                    path="/bundles/support-bundle-1.tar.gz",
-                    relative_path="support-bundle-1.tar.gz",
-                    size_bytes=1024 * 1024,  # 1 MB
-                    modified_time=1617292800.0,  # 2021-04-01
-                    valid=True,
-                ),
-            ]
-
-            # Add an invalid bundle if include_invalid is True
-            if include_invalid:
-                bundles.append(
-                    MockAvailableBundle(
-                        name="invalid-bundle.txt",
-                        path="/bundles/invalid-bundle.txt",
-                        relative_path="invalid-bundle.txt",
-                        size_bytes=512,
-                        modified_time=1617292800.0,
-                        valid=False,
-                        validation_message="Not a valid support bundle format",
-                    )
+                    name="invalid-bundle.txt",
+                    path=str(temp_bundle_dir / "invalid-bundle.txt"),
+                    relative_path="invalid-bundle.txt",
+                    size_bytes=512,
+                    modified_time=1617292800.0,
+                    valid=False,
+                    validation_message="Not a valid support bundle format",
                 )
-        else:
-            bundles = []
+            )
+    else:
+        bundles = []
 
-        # Set up the mock return value
-        bundle_manager.list_available_bundles = AsyncMock(return_value=bundles)
+    # Mock only the list_available_bundles method, keep rest of BundleManager real
+    with (
+        patch.object(bundle_manager, "list_available_bundles", new_callable=AsyncMock) as mock_list,
+        patch("mcp_server_troubleshoot.server.get_bundle_manager") as mock_get_manager,
+    ):
+        mock_list.return_value = bundles
+        mock_get_manager.return_value = bundle_manager
 
         # Create ListAvailableBundlesArgs instance
         from mcp_server_troubleshoot.bundle import ListAvailableBundlesArgs
 
-        args = ListAvailableBundlesArgs(include_invalid=include_invalid)
+        args = ListAvailableBundlesArgs(include_invalid=include_invalid, verbosity="verbose")
 
         # Call the tool function
         response = await list_available_bundles(args)
 
-        # Verify method call
-        bundle_manager.list_available_bundles.assert_awaited_once_with(include_invalid)
+        # Verify method call on real instance
+        mock_list.assert_awaited_once_with(include_invalid)
 
         # Use the test assertion helper to verify response
         test_assertions.assert_api_response_valid(response, "text", expected_strings)
 
+    # No manual cleanup needed - tmp_path handles it automatically
+
 
 @pytest.mark.asyncio
-async def test_cleanup_resources(test_assertions):
+async def test_cleanup_resources(test_assertions: Any, tmp_path: Path) -> None:
     """
     Test that the cleanup_resources function properly cleans up bundle manager resources.
 
@@ -594,11 +770,20 @@ async def test_cleanup_resources(test_assertions):
 
     Args:
         test_assertions: Assertions helper fixture
+        tmp_path: Pytest's temporary directory fixture
     """
-    # Mock both app_context and legacy bundle manager
+    # Create temporary bundle directory for real bundle manager
+    temp_bundle_dir = tmp_path / "bundle_dir"
+    temp_bundle_dir.mkdir()
+
+    # Create real bundle manager instance
+    bundle_manager = BundleManager(temp_bundle_dir)
+
+    # Mock both app_context and legacy bundle manager access while using real instances
     with (
         patch("mcp_server_troubleshoot.server.get_app_context") as mock_get_context,
         patch("mcp_server_troubleshoot.server.globals") as mock_globals,
+        patch.object(bundle_manager, "cleanup", new_callable=AsyncMock) as mock_cleanup,
     ):
 
         # Reset shutdown flag
@@ -606,10 +791,9 @@ async def test_cleanup_resources(test_assertions):
 
         mcp_server_troubleshoot.server._is_shutting_down = False
 
-        # Setup app context mode
+        # Setup app context mode with real bundle manager
         mock_app_context = AsyncMock()
-        mock_app_context.bundle_manager = AsyncMock()
-        mock_app_context.bundle_manager.cleanup = AsyncMock()
+        mock_app_context.bundle_manager = bundle_manager
 
         # Set return value for get_app_context
         mock_get_context.return_value = mock_app_context
@@ -622,25 +806,26 @@ async def test_cleanup_resources(test_assertions):
         # Call cleanup_resources
         await cleanup_resources()
 
-        # Verify cleanup was called on app context bundle manager
-        mock_app_context.bundle_manager.cleanup.assert_awaited_once()
+        # Verify cleanup was called on real bundle manager instance
+        mock_cleanup.assert_awaited_once()
 
         # Verify shutdown flag was set
         assert mcp_server_troubleshoot.server._is_shutting_down is True
 
         # Reset mock
-        mock_app_context.bundle_manager.cleanup.reset_mock()
+        mock_cleanup.reset_mock()
 
         # Call cleanup_resources again (should not call cleanup again)
         await cleanup_resources()
 
         # Verify cleanup was not called again
-        mock_app_context.bundle_manager.cleanup.assert_not_awaited()
+        mock_cleanup.assert_not_awaited()
 
-    # Now test legacy mode
+    # Now test legacy mode with real bundle manager
     with (
         patch("mcp_server_troubleshoot.server.get_app_context") as mock_get_context,
         patch("mcp_server_troubleshoot.server.globals") as mock_globals,
+        patch.object(bundle_manager, "cleanup", new_callable=AsyncMock) as mock_cleanup,
     ):
 
         # Reset shutdown flag
@@ -649,25 +834,23 @@ async def test_cleanup_resources(test_assertions):
         # Setup legacy mode (no app context)
         mock_get_context.return_value = None
 
-        # Setup legacy bundle manager
-        mock_bundle_manager = AsyncMock()
-        mock_bundle_manager.cleanup = AsyncMock()
-
-        # Mock globals for legacy mode
-        mock_globals.return_value = {"_bundle_manager": mock_bundle_manager}
+        # Mock globals for legacy mode with real bundle manager
+        mock_globals.return_value = {"_bundle_manager": bundle_manager}
 
         # Call cleanup_resources
         await cleanup_resources()
 
-        # Verify cleanup was called on legacy bundle manager
-        mock_bundle_manager.cleanup.assert_awaited_once()
+        # Verify cleanup was called on real bundle manager
+        mock_cleanup.assert_awaited_once()
 
         # Verify shutdown flag was set
         assert mcp_server_troubleshoot.server._is_shutting_down is True
 
+    # No manual cleanup needed - tmp_path handles it automatically
+
 
 @pytest.mark.asyncio
-async def test_register_signal_handlers():
+async def test_register_signal_handlers() -> None:
     """
     Test that the register_signal_handlers function properly sets up handlers for signals.
 
@@ -695,7 +878,7 @@ async def test_register_signal_handlers():
 
 
 @pytest.mark.asyncio
-async def test_shutdown_function():
+async def test_shutdown_function() -> None:
     """
     Test that the shutdown function properly triggers cleanup process.
 

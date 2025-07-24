@@ -222,6 +222,11 @@ def container_image(request):
     if not is_container_runtime_available():
         pytest.skip("Podman is not available")
 
+    # Skip container builds in CI due to melange/apko limitations
+    # Container builds are validated in the publish workflow
+    if os.environ.get("CI") == "true":
+        pytest.skip("Container image builds are skipped in CI - run locally with 'pytest -m slow'")
+
     # Get project root directory
     project_root = Path(__file__).parents[1]
 

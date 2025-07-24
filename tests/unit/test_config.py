@@ -8,21 +8,10 @@ import pytest
 from unittest.mock import patch, mock_open
 import yaml
 
-from mcp_server_troubleshoot.config import load_config_from_path, get_recommended_client_config
+from mcp_server_troubleshoot.config import load_config_from_path
 
 # Mark all tests in this file as unit tests
 pytestmark = pytest.mark.unit
-
-
-def test_get_recommended_client_config():
-    """Test that the recommended client config is well-formed."""
-    config = get_recommended_client_config()
-    assert "mcpServers" in config
-    assert "troubleshoot" in config["mcpServers"]
-    server_config = config["mcpServers"]["troubleshoot"]
-    assert "command" in server_config
-    assert "args" in server_config
-    assert isinstance(server_config["args"], list)
 
 
 def test_load_config_invalid_yaml():

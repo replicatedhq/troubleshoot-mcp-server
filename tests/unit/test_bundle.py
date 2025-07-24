@@ -16,10 +16,12 @@ from pydantic import ValidationError
 from mcp_server_troubleshoot.bundle import (
     BundleDownloadError,
     BundleManager,
+    BundleManagerError,
     BundleMetadata,
     BundleNotFoundError,
     InitializeBundleArgs,
 )
+from tests.test_utils import TempBundleManager, create_minimal_kubeconfig
 
 # Mark all tests in this file as unit tests
 pytestmark = pytest.mark.unit
@@ -58,33 +60,39 @@ async def test_bundle_manager_initialize_bundle_url():
         bundle_dir = Path(temp_dir)
         manager = BundleManager(bundle_dir)
 
-        # Mock the download method
-        download_path = bundle_dir / "test_bundle.tar.gz"
-        with open(download_path, "w") as f:
-            f.write("mock bundle content")
+        # Create a real test bundle and simulate download
+        with TempBundleManager() as bundle_manager:
+            test_bundle_path = bundle_manager.get_tar_path()
+            download_path = bundle_dir / "downloaded_bundle.tar.gz"
 
-        manager._download_bundle = AsyncMock(return_value=download_path)
+            # Simulate download by copying real bundle
+            import shutil
 
-        # Mock the sbctl initialization
-        kubeconfig_path = bundle_dir / "test_kubeconfig"
-        with open(kubeconfig_path, "w") as f:
-            f.write("mock kubeconfig content")
+            shutil.copy2(test_bundle_path, download_path)
 
-        manager._initialize_with_sbctl = AsyncMock(return_value=kubeconfig_path)
-        manager._wait_for_initialization = AsyncMock()
+            # Mock only the network download, not the bundle handling
+            manager._download_bundle = AsyncMock(return_value=download_path)
 
-        # Test initializing from a URL
-        result = await manager.initialize_bundle("https://example.com/bundle.tar.gz")
+            # Create a real kubeconfig file
+            kubeconfig_path = bundle_dir / "test_kubeconfig"
+            create_minimal_kubeconfig(kubeconfig_path)
 
-        # Verify the result
-        assert isinstance(result, BundleMetadata)
-        assert result.source == "https://example.com/bundle.tar.gz"
-        assert result.kubeconfig_path == kubeconfig_path
-        assert result.initialized is True
+            # Mock only subprocess operations, not bundle logic
+            manager._initialize_with_sbctl = AsyncMock(return_value=kubeconfig_path)
+            manager._wait_for_initialization = AsyncMock()
 
-        # Verify the mocks were called
-        manager._download_bundle.assert_awaited_once_with("https://example.com/bundle.tar.gz")
-        manager._initialize_with_sbctl.assert_awaited_once()
+            # Test initializing from a URL
+            result = await manager.initialize_bundle("https://example.com/bundle.tar.gz")
+
+            # Verify the result
+            assert isinstance(result, BundleMetadata)
+            assert result.source == "https://example.com/bundle.tar.gz"
+            assert result.kubeconfig_path == kubeconfig_path
+            assert result.initialized is True
+
+            # Verify the mocks were called
+            manager._download_bundle.assert_awaited_once_with("https://example.com/bundle.tar.gz")
+            manager._initialize_with_sbctl.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -94,30 +102,35 @@ async def test_bundle_manager_initialize_bundle_local():
         bundle_dir = Path(temp_dir)
         manager = BundleManager(bundle_dir)
 
-        # Create a mock bundle file
-        bundle_path = bundle_dir / "local_bundle.tar.gz"
-        with open(bundle_path, "w") as f:
-            f.write("mock bundle content")
+        # Create a real test bundle structure
+        with TempBundleManager() as bundle_manager:
+            bundle_tar_path = bundle_manager.get_tar_path()
 
-        # Mock the sbctl initialization
-        kubeconfig_path = bundle_dir / "test_kubeconfig"
-        with open(kubeconfig_path, "w") as f:
-            f.write("mock kubeconfig content")
+            # Copy the bundle to our test directory
+            local_bundle_path = bundle_dir / "local_bundle.tar.gz"
+            import shutil
 
-        manager._initialize_with_sbctl = AsyncMock(return_value=kubeconfig_path)
-        manager._wait_for_initialization = AsyncMock()
+            shutil.copy2(bundle_tar_path, local_bundle_path)
 
-        # Test initializing from a local file
-        result = await manager.initialize_bundle(str(bundle_path))
+            # Create a real kubeconfig file
+            kubeconfig_path = bundle_dir / "test_kubeconfig"
+            create_minimal_kubeconfig(kubeconfig_path)
 
-        # Verify the result
-        assert isinstance(result, BundleMetadata)
-        assert result.source == str(bundle_path)
-        assert result.kubeconfig_path == kubeconfig_path
-        assert result.initialized is True
+            # Only mock subprocess operations, not internal bundle logic
+            manager._initialize_with_sbctl = AsyncMock(return_value=kubeconfig_path)
+            manager._wait_for_initialization = AsyncMock()
 
-        # Verify the sbctl initialization was called
-        manager._initialize_with_sbctl.assert_awaited_once()
+            # Test initializing from a local file
+            result = await manager.initialize_bundle(str(local_bundle_path))
+
+            # Verify the result
+            assert isinstance(result, BundleMetadata)
+            assert result.source == str(local_bundle_path)
+            assert result.kubeconfig_path == kubeconfig_path
+            assert result.initialized is True
+
+            # Verify the sbctl initialization was called
+            manager._initialize_with_sbctl.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -125,22 +138,19 @@ async def test_bundle_manager_initialize_bundle_nonexistent():
     """Test that the bundle manager raises an error for nonexistent bundles."""
     with tempfile.TemporaryDirectory() as temp_dir:
         bundle_dir = Path(temp_dir)
+        manager = BundleManager(bundle_dir)
 
-        # Instead of testing the full initialize_bundle method,
-        # directly test the local file check logic
+        # Test with a truly nonexistent file path
         nonexistent_path = bundle_dir / "nonexistent.tar.gz"
 
         # Ensure file doesn't exist
         if nonexistent_path.exists():
             nonexistent_path.unlink()
 
-        # Check if the bundle exists using the same logic as the manager
-        assert not nonexistent_path.exists()
-
-        # Verify the correct exception is raised for nonexistent file
-        with pytest.raises(BundleNotFoundError) as excinfo:
-            if not nonexistent_path.exists():
-                raise BundleNotFoundError(f"Bundle not found: {nonexistent_path}")
+        # Test the actual manager method with nonexistent file
+        # The actual implementation wraps BundleNotFoundError in BundleManagerError
+        with pytest.raises((BundleNotFoundError, BundleManagerError)) as excinfo:
+            await manager.initialize_bundle(str(nonexistent_path))
 
         # Verify the error message contains the path
         assert str(nonexistent_path) in str(excinfo.value)
@@ -608,6 +618,7 @@ async def test_bundle_manager_initialize_with_sbctl():
                 self.killed = True
 
             async def wait(self):
+                self.returncode = 0
                 return 0
 
         class MockStreamReader:
@@ -714,50 +725,55 @@ async def test_bundle_manager_cleanup_active_bundle():
         bundle_dir = Path(temp_dir)
         manager = BundleManager(bundle_dir)
 
-        # Create a bundle directory with some content
-        bundle_path = bundle_dir / "test_bundle_dir"
-        bundle_path.mkdir(parents=True)
+        # Create a real bundle structure for cleanup testing
+        with TempBundleManager() as bundle_manager:
+            # Copy bundle structure to our test directory
+            test_bundle_structure = bundle_manager.get_structure()
+            bundle_path = bundle_dir / "test_bundle_cleanup"
+            import shutil
 
-        # Add some files to the bundle directory to verify cleanup
-        test_file = bundle_path / "test_file.txt"
-        with open(test_file, "w") as f:
-            f.write("Test content")
+            shutil.copytree(test_bundle_structure["support_bundle"], bundle_path)
 
-        # Set an active bundle pointing to our test directory
-        manager.active_bundle = BundleMetadata(
-            id="test",
-            source="test",
-            path=bundle_path,
-            kubeconfig_path=bundle_dir / "kubeconfig",
-            initialized=True,
-        )
+            # Add additional test files to verify cleanup
+            test_file = bundle_path / "cleanup_test_file.txt"
+            test_file.write_text("Test content for cleanup")
 
-        # Mock the sbctl process
-        mock_process = AsyncMock()
-        mock_process.terminate = MagicMock()
-        mock_process.wait = AsyncMock()
-        manager.sbctl_process = mock_process
+            # Set an active bundle pointing to our test directory
+            manager.active_bundle = BundleMetadata(
+                id="test",
+                source="test",
+                path=bundle_path,
+                kubeconfig_path=bundle_dir / "kubeconfig",
+                initialized=True,
+            )
 
-        # Verify the directory exists before cleanup
-        assert bundle_path.exists()
-        assert test_file.exists()
+            # Mock only the sbctl process (external dependency)
+            mock_process = AsyncMock()
+            mock_process.terminate = MagicMock()
+            mock_process.wait = AsyncMock()
+            manager.sbctl_process = mock_process
 
-        # Call _cleanup_active_bundle
-        await manager._cleanup_active_bundle()
+            # Verify the directory and files exist before cleanup
+            assert bundle_path.exists()
+            assert test_file.exists()
+            assert (bundle_path / "cluster-resources").exists()  # From real structure
 
-        # Verify the sbctl process was terminated
-        mock_process.terminate.assert_called_once()
+            # Call _cleanup_active_bundle (using real cleanup logic)
+            await manager._cleanup_active_bundle()
 
-        # Verify the active bundle was reset
-        assert manager.active_bundle is None
-        assert manager.sbctl_process is None
+            # Verify the sbctl process was terminated
+            mock_process.terminate.assert_called_once()
 
-        # Verify the directory was removed
-        assert not bundle_path.exists()
-        assert not test_file.exists()
+            # Verify the active bundle was reset
+            assert manager.active_bundle is None
+            assert manager.sbctl_process is None
 
-        # Verify the parent directory was not removed
-        assert bundle_dir.exists()
+            # Verify the directory was removed (real cleanup behavior)
+            assert not bundle_path.exists()
+            assert not test_file.exists()
+
+            # Verify the parent directory was not removed
+            assert bundle_dir.exists()
 
 
 @pytest.mark.asyncio
@@ -874,38 +890,47 @@ async def test_bundle_manager_host_only_bundle_detection():
         bundle_dir = Path(temp_dir)
         manager = BundleManager(bundle_dir)
 
-        # Mock bundle path
-        test_bundle_path = bundle_dir / "test-bundle.tar.gz"
-        test_bundle_path.touch()
+        # Create a real host-only bundle structure
+        with TempBundleManager(bundle_type="host_only") as bundle_manager:
+            test_bundle_path = bundle_manager.get_tar_path()
 
-        # Create a mock process that exits quickly with "No cluster resources found" message
-        mock_process = AsyncMock()
-        mock_process.wait = AsyncMock(return_value=0)  # Process exits with code 0
-        mock_process.returncode = 0
+            # Copy the bundle to our test directory
+            local_bundle_path = bundle_dir / "host-only-bundle.tar.gz"
+            import shutil
 
-        # Mock stdout and stderr to return the "No cluster resources found" message
-        mock_stdout = AsyncMock()
-        mock_stdout.read = AsyncMock(
-            return_value=b"Downloading bundle\nBundle extracted to /tmp/sbctl-123\nNo cluster resources found in bundle\n"
-        )
-        mock_process.stdout = mock_stdout
+            shutil.copy2(test_bundle_path, local_bundle_path)
 
-        mock_stderr = AsyncMock()
-        mock_stderr.read = AsyncMock(return_value=b"")
-        mock_process.stderr = mock_stderr
+            # Create a mock process that simulates sbctl detecting host-only bundle
+            mock_process = AsyncMock()
+            mock_process.wait = AsyncMock(return_value=0)  # Process exits with code 0
+            mock_process.returncode = 0
 
-        # Mock the subprocess creation to return our mock process
-        with patch("asyncio.create_subprocess_exec", return_value=mock_process) as mock_subprocess:
-            with patch("os.chdir"):  # Mock chdir to avoid changing actual directory
-                # Mock _download_bundle to avoid actual download
-                with patch.object(manager, "_download_bundle", return_value=test_bundle_path):
-                    # Test the initialization
-                    metadata = await manager.initialize_bundle(str(test_bundle_path))
+            # Mock stdout and stderr to return the "No cluster resources found" message
+            mock_stdout = AsyncMock()
+            mock_stdout.read = AsyncMock(
+                return_value=b"Downloading bundle\nBundle extracted to /tmp/sbctl-123\nNo cluster resources found in bundle\n"
+            )
+            mock_process.stdout = mock_stdout
 
-                    # Verify that the bundle was marked as host-only
+            mock_stderr = AsyncMock()
+            mock_stderr.read = AsyncMock(return_value=b"")
+            mock_process.stderr = mock_stderr
+
+            # Mock only subprocess execution (external dependency)
+            with patch(
+                "asyncio.create_subprocess_exec", return_value=mock_process
+            ) as mock_subprocess:
+                with patch("os.chdir"):  # Mock chdir to avoid changing actual directory
+                    # Use real bundle handling, only mock the download for URL case
+                    # Since we're using a local file, no download mocking needed
+
+                    # Test the initialization with real bundle structure
+                    metadata = await manager.initialize_bundle(str(local_bundle_path))
+
+                    # Verify that the bundle was marked as host-only (real logic)
                     assert metadata.host_only_bundle is True
                     assert metadata.initialized is True
-                    assert metadata.source == str(test_bundle_path)
+                    assert metadata.source == str(local_bundle_path)
 
                     # Verify subprocess was called with correct arguments
                     mock_subprocess.assert_called_once()
@@ -913,7 +938,9 @@ async def test_bundle_manager_host_only_bundle_detection():
                     assert args[0] == "sbctl"
                     assert args[1] == "serve"
                     assert args[2] == "--support-bundle-location"
-                    assert str(test_bundle_path) in args[3]
+                    # Verify bundle path is in the arguments
+                    bundle_arg_found = any(str(local_bundle_path) in str(arg) for arg in args)
+                    assert bundle_arg_found, f"Bundle path not found in subprocess args: {args}"
 
 
 # Note: We test regular bundles in the existing tests that already work properly

@@ -740,10 +740,83 @@ class BundleManager:
                     return kubeconfig_path  # Return dummy path, file won't exist but that's OK
 
                 # If we get here, sbctl exited quickly but not due to "no cluster resources"
-                # This might be an error, so continue with normal error handling
+                # Check the exit code to determine if it's an error
+                if self.sbctl_process.returncode != 0:
+                    error_msg = f"sbctl process exited with code {self.sbctl_process.returncode}"
+                    if all_output.strip():
+                        error_msg += f". Output: {all_output.strip()}"
+
+                    # Log the diagnostic information for debugging
+                    logger.error(f"sbctl failed to start: {error_msg}")
+
+                    # This is a real failure, raise an exception immediately
+                    raise BundleInitializationError(
+                        f"sbctl failed to initialize bundle: {error_msg}"
+                    )
 
             except asyncio.TimeoutError:
                 # Process didn't exit quickly, so it's likely starting up an API server
+                # Try to read stdout line by line to get kubeconfig path quickly
+                try:
+                    if self.sbctl_process and self.sbctl_process.stdout:
+                        # Try to read the first few lines to catch the kubeconfig announcement
+                        stdout_lines = []
+                        for attempt in range(10):  # Try up to 10 lines or 5 seconds
+                            try:
+                                line = await asyncio.wait_for(
+                                    self.sbctl_process.stdout.readline(), timeout=0.5
+                                )
+                                if not line:  # EOF
+                                    break
+                                line_text = line.decode("utf-8", errors="replace").strip()
+                                if line_text:
+                                    stdout_lines.append(line_text)
+                                    logger.debug(f"sbctl stdout line: {line_text}")
+
+                                    # Check if this line contains kubeconfig export
+                                    if "export KUBECONFIG=" in line_text:
+                                        import re
+
+                                        kubeconfig_matches = re.findall(
+                                            r"export KUBECONFIG=([^\s]+)", line_text
+                                        )
+                                        if kubeconfig_matches:
+                                            announced_kubeconfig = Path(kubeconfig_matches[0])
+                                            logger.info(
+                                                f"sbctl announced kubeconfig at: {announced_kubeconfig}"
+                                            )
+
+                                            # Wait a brief moment for the file to be created
+                                            for wait_attempt in range(10):  # Wait up to 5 seconds
+                                                await asyncio.sleep(0.5)
+                                                if announced_kubeconfig.exists():
+                                                    logger.info(
+                                                        f"Found announced kubeconfig: {announced_kubeconfig}"
+                                                    )
+                                                    try:
+                                                        safe_copy_file(
+                                                            announced_kubeconfig, kubeconfig_path
+                                                        )
+                                                        logger.info(
+                                                            f"Successfully copied kubeconfig to {kubeconfig_path}"
+                                                        )
+                                                        return kubeconfig_path
+                                                    except Exception as copy_err:
+                                                        logger.warning(
+                                                            f"Failed to copy announced kubeconfig: {copy_err}"
+                                                        )
+                                                        break
+                                            break
+                            except asyncio.TimeoutError:
+                                # No more lines available quickly, stop trying
+                                break
+
+                        if stdout_lines:
+                            logger.debug(f"sbctl initial stdout: {' | '.join(stdout_lines)}")
+
+                except Exception as read_err:
+                    logger.debug(f"Error reading initial stdout: {read_err}")
+
                 # Continue with normal initialization
                 logger.debug("sbctl process continuing, proceeding with normal initialization")
 
@@ -862,10 +935,23 @@ class BundleManager:
                         kubeconfig_matches = re.findall(r"export KUBECONFIG=([^\s]+)", stdout_text)
                         if kubeconfig_matches:
                             alt_kubeconfig = Path(kubeconfig_matches[0])
-                            logger.info(
-                                f"Found alternative kubeconfig path in stdout: {alt_kubeconfig}"
-                            )
+                            logger.info(f"Found kubeconfig path in stdout: {alt_kubeconfig}")
                             alternative_kubeconfig_paths.append(alt_kubeconfig)
+
+                            # Since we found the kubeconfig path immediately, use it
+                            if alt_kubeconfig.exists():
+                                logger.info(f"Using kubeconfig from stdout: {alt_kubeconfig}")
+                                try:
+                                    safe_copy_file(alt_kubeconfig, kubeconfig_path)
+                                    logger.info(
+                                        f"Copied kubeconfig from {alt_kubeconfig} to {kubeconfig_path}"
+                                    )
+                                    return  # Successfully copied, exit the wait function
+                                except Exception as copy_err:
+                                    logger.warning(
+                                        f"Failed to copy kubeconfig immediately: {copy_err}"
+                                    )
+                                    # Continue with normal waiting logic
 
                 if stderr_data:
                     stderr_text = (
@@ -909,6 +995,30 @@ class BundleManager:
             logger.debug("Alternative kubeconfig locations disabled by configuration")
 
         while asyncio.get_event_loop().time() - start_time < timeout:
+            # First check if the process is still running - if it exited with an error,
+            # we should fail immediately instead of waiting for timeout
+            if self.sbctl_process and self.sbctl_process.returncode is not None:
+                # Process exited - check if this is expected
+                if self.sbctl_process.returncode != 0:
+                    # Process failed - read any error output and fail immediately
+                    process_output = ""
+                    try:
+                        if self.sbctl_process.stdout:
+                            stdout_data = await self.sbctl_process.stdout.read()
+                            process_output += stdout_data.decode("utf-8", errors="replace")
+                        if self.sbctl_process.stderr:
+                            stderr_data = await self.sbctl_process.stderr.read()
+                            process_output += stderr_data.decode("utf-8", errors="replace")
+                    except Exception:
+                        pass
+
+                    error_msg = f"sbctl process exited with code {self.sbctl_process.returncode} before initialization completed"
+                    if process_output.strip():
+                        error_msg += f". Process output: {process_output.strip()}"
+
+                    logger.error(f"sbctl failed during initialization: {error_msg}")
+                    raise BundleInitializationError(error_msg)
+
             # Check the expected kubeconfig path
             if kubeconfig_path.exists() and not kubeconfig_found:
                 logger.info(f"Kubeconfig found at expected location: {kubeconfig_path}")
@@ -1252,6 +1362,8 @@ class BundleManager:
 
                     # As a fallback, try to clean up any sbctl processes related to serve
                     try:
+                        import subprocess
+
                         kill_cmd = ["pkill", "-f", "sbctl serve"]
                         result = subprocess.run(kill_cmd, capture_output=True, text=True)
                         if result.returncode == 0:
