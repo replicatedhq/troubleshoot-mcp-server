@@ -124,7 +124,7 @@ class KubectlExecutor:
         self.bundle_manager = bundle_manager
 
     async def execute(
-        self, command: str, timeout: int = 30, json_output: bool = True
+        self, command: str, timeout: int = 30, json_output: bool = False
     ) -> KubectlResult:
         """
         Execute a kubectl command.

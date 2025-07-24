@@ -1230,7 +1230,7 @@ class BundleManager:
 
         # Collect additional diagnostic information
         diagnostics = await self.get_diagnostic_info()
-        diagnostics_str = json.dumps(diagnostics, indent=2)
+        diagnostics_str = json.dumps(diagnostics, separators=(",", ":"))
 
         raise BundleInitializationError(
             f"Timeout waiting for bundle initialization after {timeout} seconds.{error_details}\n"

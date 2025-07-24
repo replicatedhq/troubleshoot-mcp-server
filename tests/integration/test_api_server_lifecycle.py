@@ -100,7 +100,7 @@ class TestAPIServerLifecycle:
         # Test basic API availability with kubectl
         try:
             # Simple command that should work if API server is available
-            result = await kubectl_executor.execute("get namespaces")
+            result = await kubectl_executor.execute("get namespaces", json_output=True)
 
             # Verify we got a successful response
             assert (

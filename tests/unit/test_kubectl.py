@@ -144,7 +144,7 @@ async def test_kubectl_executor_execute_success():
 
     # Verify the result
     assert result == mock_result
-    executor._run_kubectl_command.assert_awaited_once_with("get pods", bundle, 30, True)
+    executor._run_kubectl_command.assert_awaited_once_with("get pods", bundle, 30, False)
 
 
 @pytest.mark.asyncio
@@ -518,6 +518,47 @@ async def test_kubectl_user_format_preserved():
         # Verify subprocess call preserves user format
         cmd_args = mock_exec.call_args[0]
         assert "yaml" in cmd_args
+
+
+@pytest.mark.asyncio
+async def test_kubectl_executor_defaults_to_table_format():
+    """Test that kubectl executor defaults to table format, not JSON."""
+    # Mock bundle manager and bundle
+    bundle_manager = AsyncMock(spec=BundleManager)
+    bundle = BundleMetadata(
+        id="test",
+        source="test",
+        path=Path("/test"),
+        kubeconfig_path=Path("/test/kubeconfig"),
+        initialized=True,
+        host_only_bundle=False,
+    )
+    bundle_manager.get_active_bundle.return_value = bundle
+
+    # Create executor
+    executor = KubectlExecutor(bundle_manager)
+
+    # Mock the run command to return table format output
+    mock_result = KubectlResult(
+        command="get pods",
+        exit_code=0,
+        stdout="NAME              READY   STATUS    RESTARTS   AGE\\nmy-pod            1/1     Running   0          1d",
+        stderr="",
+        output="NAME              READY   STATUS    RESTARTS   AGE\\nmy-pod            1/1     Running   0          1d",
+        is_json=False,  # This is the key assertion - it should NOT be JSON by default
+        duration_ms=100,
+    )
+    executor._run_kubectl_command = AsyncMock(return_value=mock_result)
+
+    # Execute a command WITHOUT specifying json_output (should default to False)
+    result = await executor.execute("get pods")
+
+    # Verify the result is NOT JSON
+    assert result.is_json is False, "Default kubectl execution should NOT return JSON format"
+    assert result == mock_result
+
+    # Verify _run_kubectl_command was called with json_output=False (the new default)
+    executor._run_kubectl_command.assert_awaited_once_with("get pods", bundle, 30, False)
 
 
 def test_compact_json_formatting():

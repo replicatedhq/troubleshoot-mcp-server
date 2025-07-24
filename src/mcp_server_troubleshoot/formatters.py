@@ -85,15 +85,15 @@ class ResponseFormatter:
             metadata_dict["kubeconfig_path"] = str(metadata_dict["kubeconfig_path"])
 
             if api_server_available:
-                response = f"Bundle initialized successfully:\n```json\n{json.dumps(metadata_dict, indent=2)}\n```"
+                response = f"Bundle initialized successfully:\n```json\n{json.dumps(metadata_dict, separators=(',', ':'))}\n```"
             else:
                 response = (
                     f"Bundle initialized but API server is NOT available. kubectl commands may fail:\n"
-                    f"```json\n{json.dumps(metadata_dict, indent=2)}\n```"
+                    f"```json\n{json.dumps(metadata_dict, separators=(',', ':'))}\n```"
                 )
 
                 if diagnostics and self.verbosity == VerbosityLevel.DEBUG:
-                    response += f"\n\nDiagnostic information:\n```json\n{json.dumps(diagnostics, indent=2)}\n```"
+                    response += f"\n\nDiagnostic information:\n```json\n{json.dumps(diagnostics, separators=(',', ':'))}\n```"
 
             return response
 
@@ -153,7 +153,7 @@ class ResponseFormatter:
                 bundle_list.append(bundle_entry)
 
             response_obj = {"bundles": bundle_list, "total": len(bundle_list)}
-            response = f"```json\n{json.dumps(response_obj, indent=2)}\n```\n\n"
+            response = f"```json\n{json.dumps(response_obj, separators=(',', ':'))}\n```\n\n"
 
             # Add usage instructions
             example_bundle = next((b for b in bundles if b.valid), bundles[0] if bundles else None)
@@ -196,7 +196,7 @@ class ResponseFormatter:
             )
 
             entries_data = [entry.model_dump() for entry in result.entries]
-            entries_json = json.dumps(entries_data, indent=2)
+            entries_json = json.dumps(entries_data, separators=(",", ":"))
             response += f"```json\n{entries_json}\n```\n"
 
             metadata = {
@@ -205,7 +205,7 @@ class ResponseFormatter:
                 "total_files": result.total_files,
                 "total_dirs": result.total_dirs,
             }
-            metadata_str = json.dumps(metadata, indent=2)
+            metadata_str = json.dumps(metadata, separators=(",", ":"))
             response += f"Directory metadata:\n```json\n{metadata_str}\n```"
 
             return response
@@ -335,7 +335,7 @@ class ResponseFormatter:
                 "case_sensitive": result.case_sensitive,
                 "truncated": result.truncated,
             }
-            metadata_str = json.dumps(metadata, indent=2)
+            metadata_str = json.dumps(metadata, separators=(",", ":"))
             response += f"Search metadata:\n```json\n{metadata_str}\n```"
 
             return response
@@ -373,7 +373,7 @@ class ResponseFormatter:
             if self.verbosity == VerbosityLevel.DEBUG and result.stderr:
                 metadata["stderr"] = result.stderr
 
-            metadata_str = json.dumps(metadata, indent=2)
+            metadata_str = json.dumps(metadata, separators=(",", ":"))
             response += f"\nCommand metadata:\n```json\n{metadata_str}\n```"
 
             return response
@@ -391,7 +391,7 @@ class ResponseFormatter:
         else:  # VERBOSE or DEBUG
             response = error_message
             if diagnostics and self.verbosity == VerbosityLevel.DEBUG:
-                response += f"\n\nDiagnostic information:\n```json\n{json.dumps(diagnostics, indent=2)}\n```"
+                response += f"\n\nDiagnostic information:\n```json\n{json.dumps(diagnostics, separators=(',', ':'))}\n```"
             return response
 
     def _format_file_size(self, size_bytes: int) -> str:

@@ -61,7 +61,7 @@ def setup_logging(verbose: bool = False, mcp_mode: bool = False) -> None:
 def handle_show_config() -> None:
     """Output recommended client configuration."""
     config = get_recommended_client_config()
-    json.dump(config, sys.stdout, indent=2)
+    json.dump(config, sys.stdout, separators=(",", ":"))
     sys.exit(0)
 
 

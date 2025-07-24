@@ -94,7 +94,7 @@ def parse_args() -> argparse.Namespace:
 def handle_show_config() -> None:
     """Output recommended client configuration."""
     config = get_recommended_client_config()
-    json.dump(config, sys.stdout, indent=2)
+    json.dump(config, sys.stdout, separators=(",", ":"))
     sys.exit(0)
 
 
