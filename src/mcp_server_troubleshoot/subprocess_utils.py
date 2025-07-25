@@ -7,10 +7,109 @@ transport cleanup to avoid ResourceWarning about unclosed transports.
 
 import asyncio
 import logging
+import sys
 from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator, Optional, Tuple
 
 logger = logging.getLogger(__name__)
+
+
+def _safe_transport_cleanup(transport: Any) -> None:
+    """
+    Safely cleanup transport objects with Python 3.13 compatibility.
+
+    In Python 3.13+, _UnixReadPipeTransport objects may not have the '_closing'
+    attribute when accessed during garbage collection, causing AttributeError.
+    This function provides safe cleanup that works across Python versions.
+
+    Args:
+        transport: The transport object to cleanup safely
+    """
+    if not transport:
+        return
+
+    try:
+        # Python 3.13+ compatible transport cleanup
+        if sys.version_info >= (3, 13):
+            # For Python 3.13+, be more careful about accessing internal attributes
+            logger.debug("Performing Python 3.13+ compatible transport cleanup")
+
+            # Try to close the transport gracefully
+            try:
+                if hasattr(transport, "close") and callable(transport.close):
+                    transport.close()
+                    logger.debug("Transport closed successfully")
+            except Exception as e:
+                logger.debug(f"Error during transport close: {e}, continuing cleanup")
+
+            # Don't rely on internal _closing attribute in Python 3.13+
+            # Instead, use a try/except approach for transport state checking
+            try:
+                if hasattr(transport, "is_closing") and callable(transport.is_closing):
+                    # This method should be available and safe to call
+                    is_closing = transport.is_closing()
+                    logger.debug(f"Transport is_closing status: {is_closing}")
+                else:
+                    logger.debug("Transport doesn't have is_closing method, assuming closed")
+            except AttributeError as e:
+                # This is the specific error we're trying to avoid
+                logger.debug(
+                    f"AttributeError during transport status check (expected in Python 3.13): {e}"
+                )
+            except Exception as e:
+                logger.debug(f"Unexpected error during transport status check: {e}")
+
+        else:
+            # For Python < 3.13, use the original cleanup approach
+            logger.debug("Performing pre-Python 3.13 transport cleanup")
+            transport.close()
+
+    except Exception as e:
+        # Catch any cleanup errors to prevent them from propagating
+        logger.warning(f"Error during safe transport cleanup: {e}")
+
+
+async def _safe_transport_wait_close(
+    transport: Any, timeout_per_check: float = 0.1, max_checks: int = 10
+) -> None:
+    """
+    Safely wait for transport to close with Python 3.13 compatibility.
+
+    Args:
+        transport: The transport object to wait for
+        timeout_per_check: Time to wait between each check
+        max_checks: Maximum number of checks before giving up
+    """
+    if not transport:
+        return
+
+    checks_done = 0
+
+    while checks_done < max_checks:
+        try:
+            # Python 3.13 compatible is_closing check
+            if hasattr(transport, "is_closing") and callable(transport.is_closing):
+                if transport.is_closing():
+                    logger.debug("Transport is closing, wait complete")
+                    break
+            else:
+                # If is_closing is not available, assume the transport is handled
+                logger.debug("Transport is_closing not available, assuming handled")
+                break
+
+        except AttributeError as e:
+            # This is the _closing attribute error we're avoiding
+            logger.debug(f"AttributeError during transport wait (handled safely): {e}")
+            break
+        except Exception as e:
+            logger.debug(f"Unexpected error during transport wait: {e}")
+            break
+
+        await asyncio.sleep(timeout_per_check)
+        checks_done += 1
+
+    if checks_done >= max_checks:
+        logger.debug("Transport wait timeout reached, proceeding anyway")
 
 
 @asynccontextmanager
@@ -43,21 +142,12 @@ async def pipe_transport_reader(pipe: Any) -> AsyncGenerator[asyncio.StreamReade
         yield stdout_reader
     finally:
         if transport:
-            logger.debug("Closing pipe transport")
-            transport.close()
+            logger.debug("Closing pipe transport with Python 3.13 compatibility")
+            # Use the new safe transport cleanup
+            _safe_transport_cleanup(transport)
 
-            # Wait for transport to actually close to prevent warnings
-            # about unclosed transports during garbage collection
-            close_timeout = 0.1  # Short timeout to avoid hanging
-            timeout_count = 0
-            max_timeouts = 10  # Maximum 1 second wait
-
-            while not transport.is_closing() and timeout_count < max_timeouts:
-                await asyncio.sleep(close_timeout)
-                timeout_count += 1
-
-            if timeout_count >= max_timeouts:
-                logger.warning("Transport did not close within timeout, continuing anyway")
+            # Wait for transport to close safely
+            await _safe_transport_wait_close(transport, timeout_per_check=0.1, max_checks=10)
 
 
 async def subprocess_exec_with_cleanup(

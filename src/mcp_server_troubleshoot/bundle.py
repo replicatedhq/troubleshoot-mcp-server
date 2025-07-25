@@ -13,6 +13,7 @@ import os
 import re
 import shutil
 import signal
+import socket
 import tarfile
 import tempfile
 from pathlib import Path
@@ -1765,6 +1766,28 @@ class BundleManager:
         logger.warning("API server is not available at any endpoint")
         return False
 
+    def _check_port_listening_python(self, port: int) -> bool:
+        """
+        Python-native port checking that replaces netstat dependency.
+
+        This function uses Python's socket module to check if a port is in use,
+        eliminating the need for external netstat command which may not be
+        available in container environments.
+
+        Args:
+            port: The port number to check
+
+        Returns:
+            True if port is in use (listening), False if port is free
+        """
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                # Try to bind to the port
+                s.bind(("", port))
+                return False  # Port is free (we could bind to it)
+        except OSError:
+            return True  # Port is in use (couldn't bind - something else is using it)
+
     async def get_diagnostic_info(self) -> dict[str, object]:
         """
         Get diagnostic information about the current bundle and sbctl.
@@ -1863,27 +1886,29 @@ class BundleManager:
         for port in ports_to_check:
             info[f"port_{port}_checked"] = True
 
-            # Check network connections on the port
+            # Check network connections on the port using Python sockets (replaces netstat dependency)
             try:
-                from .subprocess_utils import subprocess_exec_with_cleanup
+                # Use Python-native port checking instead of external netstat command
+                port_in_use = self._check_port_listening_python(port)
+                info[f"port_{port}_listening"] = port_in_use
 
-                returncode, stdout, stderr = await subprocess_exec_with_cleanup(
-                    "netstat", "-tuln", timeout=5.0
-                )
-
-                if returncode == 0:
-                    netstat_output = stdout.decode()
-                    for line in netstat_output.splitlines():
-                        if f":{port}" in line:
-                            info[f"port_{port}_listening"] = True
-                            info[f"port_{port}_details"] = line.strip()
-                            break
-                    else:
-                        info[f"port_{port}_listening"] = False
+                if port_in_use:
+                    info[f"port_{port}_details"] = (
+                        f"Port {port} is in use (detected via Python socket)"
+                    )
                 else:
-                    info["netstat_error_text"] = stderr.decode()
+                    info[f"port_{port}_details"] = (
+                        f"Port {port} is free (detected via Python socket)"
+                    )
+
+                logger.debug(f"Port {port} check completed: listening={port_in_use}")
+
             except Exception as e:
-                info["netstat_exception_text"] = str(e)
+                info["socket_port_check_exception"] = str(e)
+                logger.warning(f"Error during Python socket port check for port {port}: {e}")
+                # Fallback: assume port is not listening if we can't check
+                info[f"port_{port}_listening"] = False
+                info[f"port_{port}_details"] = f"Could not check port {port}: {e}"
 
             # Try aiohttp to test API server on this port
             try:
