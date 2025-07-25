@@ -14,7 +14,7 @@ from typing import List, Optional
 
 from .server import mcp, shutdown
 from .config import get_recommended_client_config
-from .lifecycle import setup_signal_handlers
+from .lifecycle import setup_signal_handlers, is_shutdown_requested
 
 logger = logging.getLogger(__name__)
 
@@ -149,6 +149,13 @@ def main(args: Optional[List[str]] = None) -> None:
     try:
         logger.debug("Starting FastMCP server")
         mcp.run()
+
+        # After mcp.run() returns, check if shutdown was requested via signal
+        if is_shutdown_requested():
+            logger.info("Shutdown requested via signal, performing cleanup")
+            shutdown()
+            # Let Python exit naturally without sys.exit()
+            return
     except KeyboardInterrupt:
         logger.info("Server stopped by user")
         # Explicitly call shutdown here to handle Ctrl+C case
