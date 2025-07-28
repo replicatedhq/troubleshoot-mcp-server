@@ -236,7 +236,16 @@ def test_container_isolated_from_host_tools():
 
     # This should fail because busybox doesn't have sbctl
     result = subprocess.run(
-        [runtime, "run", "--name", container_name, "--rm", base_image, "which", "sbctl"],
+        [
+            runtime,
+            "run",
+            "--name",
+            container_name,
+            "--rm",
+            base_image,
+            "which",
+            "sbctl",
+        ],
         capture_output=True,
         text=True,
         timeout=30,

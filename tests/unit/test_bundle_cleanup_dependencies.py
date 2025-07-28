@@ -90,7 +90,11 @@ async def test_bundle_cleanup_functional_dependency_validation():
             error_msg = str(e)
             if any(
                 indicator in error_msg.lower()
-                for indicator in ["no such file or directory", "command not found", "not found"]
+                for indicator in [
+                    "no such file or directory",
+                    "command not found",
+                    "not found",
+                ]
             ):
                 pytest.fail(
                     f"❌ TDD SUCCESS: Detected potential missing dependency!\n"

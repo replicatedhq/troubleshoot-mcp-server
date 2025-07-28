@@ -29,7 +29,11 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from mcp_server_troubleshoot.bundle import BundleManagerError, BundleManager, BundleMetadata
+from mcp_server_troubleshoot.bundle import (
+    BundleManagerError,
+    BundleManager,
+    BundleMetadata,
+)
 from mcp_server_troubleshoot.files import (
     FileContentResult,
     FileInfo,
@@ -62,15 +66,28 @@ pytestmark = [pytest.mark.unit, pytest.mark.quick]
     "source,force,api_available,expected_strings",
     [
         # Success case - all good
-        ("test_bundle.tar.gz", False, True, ["Bundle initialized successfully", "test_bundle"]),
+        (
+            "test_bundle.tar.gz",
+            False,
+            True,
+            ["Bundle initialized successfully", "test_bundle"],
+        ),
         # Success case - force initialization
-        ("test_bundle.tar.gz", True, True, ["Bundle initialized successfully", "test_bundle"]),
+        (
+            "test_bundle.tar.gz",
+            True,
+            True,
+            ["Bundle initialized successfully", "test_bundle"],
+        ),
         # Warning case - API server not available
         (
             "test_bundle.tar.gz",
             False,
             False,
-            ["Bundle initialized but API server is NOT available", "kubectl commands may fail"],
+            [
+                "Bundle initialized but API server is NOT available",
+                "kubectl commands may fail",
+            ],
         ),
     ],
     ids=[
@@ -281,7 +298,10 @@ async def test_kubectl_tool_parametrized(
         from mcp_server_troubleshoot.kubectl import KubectlCommandArgs
 
         args = KubectlCommandArgs(
-            command=command, timeout=timeout, json_output=json_output, verbosity="verbose"
+            command=command,
+            timeout=timeout,
+            json_output=json_output,
+            verbosity="verbose",
         )
 
         # Call the tool function
@@ -616,7 +636,11 @@ async def test_file_operations_error_handling(
         mock_get_explorer.return_value = file_explorer
 
         # Test all three file operations with the same error
-        from mcp_server_troubleshoot.files import ListFilesArgs, ReadFileArgs, GrepFilesArgs
+        from mcp_server_troubleshoot.files import (
+            ListFilesArgs,
+            ReadFileArgs,
+            GrepFilesArgs,
+        )
 
         # 1. Test list_files
         list_args = ListFilesArgs(path="test/path", recursive=False, verbosity="verbose")
@@ -653,11 +677,19 @@ async def test_file_operations_error_handling(
     "include_invalid,bundles_available,expected_strings",
     [
         # With bundles available
-        (False, True, ["support-bundle-1.tar.gz", "Usage Instructions", "initialize_bundle"]),
+        (
+            False,
+            True,
+            ["support-bundle-1.tar.gz", "Usage Instructions", "initialize_bundle"],
+        ),
         # No bundles available
         (False, False, ["No support bundles found", "download or transfer a bundle"]),
         # With invalid bundles included
-        (True, True, ["support-bundle-1.tar.gz", "validation_message", "initialize_bundle"]),
+        (
+            True,
+            True,
+            ["support-bundle-1.tar.gz", "validation_message", "initialize_bundle"],
+        ),
     ],
     ids=[
         "with-bundles",

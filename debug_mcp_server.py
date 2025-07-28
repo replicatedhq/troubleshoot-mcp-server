@@ -37,7 +37,12 @@ async def debug_mcp_server():
 
         # Set up environment
         env = os.environ.copy()
-        env.update({"SBCTL_TOKEN": "test-token-12345", "MCP_BUNDLE_STORAGE": str(temp_bundle_dir)})
+        env.update(
+            {
+                "SBCTL_TOKEN": "test-token-12345",
+                "MCP_BUNDLE_STORAGE": str(temp_bundle_dir),
+            }
+        )
 
         print("\\n=== Starting MCP Server Manually ===")
 

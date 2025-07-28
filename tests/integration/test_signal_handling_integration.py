@@ -80,7 +80,10 @@ if __name__ == "__main__":
 
 
 def run_server_with_signal(
-    script_content: str, signal_to_send: int, delay_before_signal: float = 0.5, timeout: float = 5.0
+    script_content: str,
+    signal_to_send: int,
+    delay_before_signal: float = 0.5,
+    timeout: float = 5.0,
 ) -> Tuple[int, str, str]:
     """
     Run a server script and send it a signal.
@@ -255,7 +258,10 @@ if __name__ == "__main__":
             stdout, stderr = process.communicate(timeout=5)
 
             # Should handle gracefully - return code of 0 or -15 (SIGTERM) is acceptable
-            assert process.returncode in (0, -15), f"Unexpected return code: {process.returncode}"
+            assert process.returncode in (
+                0,
+                -15,
+            ), f"Unexpected return code: {process.returncode}"
             assert "Fatal Python error" not in stderr
             # On CI, the process might exit too quickly to log anything
             if stderr:

@@ -31,7 +31,10 @@ from mcp_server_troubleshoot.server import (
     kubectl,
     initialize_with_bundle_dir,
 )
-from mcp_server_troubleshoot.bundle import InitializeBundleArgs, ListAvailableBundlesArgs
+from mcp_server_troubleshoot.bundle import (
+    InitializeBundleArgs,
+    ListAvailableBundlesArgs,
+)
 from mcp_server_troubleshoot.files import ListFilesArgs, ReadFileArgs, GrepFilesArgs
 from mcp_server_troubleshoot.kubectl import KubectlCommandArgs
 
@@ -355,7 +358,11 @@ async def test_grep_files_function_execution(bundle_storage_dir):
 
     # Search for common pattern via direct function call
     grep_args = GrepFilesArgs(
-        pattern="version", path="/", file_pattern="*.json", case_sensitive=False, recursive=True
+        pattern="version",
+        path="/",
+        file_pattern="*.json",
+        case_sensitive=False,
+        recursive=True,
     )
 
     grep_result = await grep_files(grep_args)

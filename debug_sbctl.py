@@ -38,7 +38,10 @@ async def debug_sbctl():
             # Test 1: Check if sbctl can read the bundle
             print("\n=== Test 1: Running sbctl with --help ===")
             process = await asyncio.create_subprocess_exec(
-                "sbctl", "--help", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+                "sbctl",
+                "--help",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
             )
             stdout, stderr = await process.communicate()
             print(f"sbctl --help exit code: {process.returncode}")
@@ -52,7 +55,10 @@ async def debug_sbctl():
             # Set up environment
             env = os.environ.copy()
             env.update(
-                {"SBCTL_TOKEN": "test-token-12345", "KUBECONFIG": str(temp_dir_path / "kubeconfig")}
+                {
+                    "SBCTL_TOKEN": "test-token-12345",
+                    "KUBECONFIG": str(temp_dir_path / "kubeconfig"),
+                }
             )
 
             cmd = [
@@ -66,7 +72,10 @@ async def debug_sbctl():
 
             # Start the process with timeout
             process = await asyncio.create_subprocess_exec(
-                *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, env=env
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=env,
             )
 
             print(f"Process started with PID: {process.pid}")

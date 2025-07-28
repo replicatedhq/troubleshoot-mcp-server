@@ -50,7 +50,11 @@ pytestmark = pytest.mark.unit
         # Valid cases
         ("dir1", False, True),
         ("dir1/subdir", True, True),
-        ("absolute/path", True, True),  # Note: without leading slash - the validator removes it
+        (
+            "absolute/path",
+            True,
+            True,
+        ),  # Note: without leading slash - the validator removes it
         # Invalid cases
         ("", False, False),  # Empty path
         ("../outside", False, False),  # Path traversal
@@ -147,7 +151,15 @@ def test_read_file_args_validation_parametrized(path, start_line, end_line, expe
     [
         # Valid cases
         ("test", "dir1", True, "*.txt", False, 100, True),
-        ("complex.pattern", ".", True, None, True, 50, True),  # Use "." for root directory
+        (
+            "complex.pattern",
+            ".",
+            True,
+            None,
+            True,
+            50,
+            True,
+        ),  # Use "." for root directory
         ("foo", "dir1/subdir", False, "*.log", False, 10, True),
         # Invalid cases
         ("", "dir1", True, "*.txt", False, 100, False),  # Empty pattern

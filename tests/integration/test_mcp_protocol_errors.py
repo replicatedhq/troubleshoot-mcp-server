@@ -136,7 +136,13 @@ class TestMCPProtocolRobustness:
                         error_msg = str(response).lower()
                         assert any(
                             keyword in error_msg
-                            for keyword in ["error", "timeout", "readuntil", "coroutine", "waiting"]
+                            for keyword in [
+                                "error",
+                                "timeout",
+                                "readuntil",
+                                "coroutine",
+                                "waiting",
+                            ]
                         )
 
                 # Either some succeed or all fail gracefully

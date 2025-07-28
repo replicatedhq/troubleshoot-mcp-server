@@ -153,7 +153,9 @@ def container_image_available():
     """Check if container image exists."""
     try:
         result = subprocess.run(
-            [CONTAINER_RUNTIME, "image", "exists", CONTAINER_IMAGE], capture_output=True, timeout=10
+            [CONTAINER_RUNTIME, "image", "exists", CONTAINER_IMAGE],
+            capture_output=True,
+            timeout=10,
         )
         if result.returncode != 0:
             pytest.skip(
@@ -354,7 +356,12 @@ class TestContainerBundleValidation:
             # Step 3: Test grep (should work even if no matches)
             grep_response = await client.call_tool(
                 "grep_files",
-                {"pattern": "kube", "path": "/", "recursive": True, "case_sensitive": False},
+                {
+                    "pattern": "kube",
+                    "path": "/",
+                    "recursive": True,
+                    "case_sensitive": False,
+                },
             )
 
             assert "result" in grep_response
@@ -410,7 +417,12 @@ class TestContainerBuildValidation:
 
             # Verify the image was created
             check_result = subprocess.run(
-                [CONTAINER_RUNTIME, "image", "exists", "troubleshoot-mcp-server:test-build"],
+                [
+                    CONTAINER_RUNTIME,
+                    "image",
+                    "exists",
+                    "troubleshoot-mcp-server:test-build",
+                ],
                 capture_output=True,
                 timeout=10,
             )

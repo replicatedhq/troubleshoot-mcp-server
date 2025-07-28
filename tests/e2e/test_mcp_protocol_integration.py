@@ -112,8 +112,14 @@ class TestMCPProtocolLifecycle:
                     assert "tools" in init_response["capabilities"]
                     # Skip tools/list test and mark as working if we can call a tool
                     tools = [
-                        {"name": "initialize_bundle", "description": "Initialize bundle"},
-                        {"name": "list_available_bundles", "description": "List available bundles"},
+                        {
+                            "name": "initialize_bundle",
+                            "description": "Initialize bundle",
+                        },
+                        {
+                            "name": "list_available_bundles",
+                            "description": "List available bundles",
+                        },
                         {"name": "list_files", "description": "List files"},
                         {"name": "read_file", "description": "Read file"},
                         {"name": "grep_files", "description": "Grep files"},

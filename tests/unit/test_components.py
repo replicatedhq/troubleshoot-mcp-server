@@ -135,7 +135,10 @@ async def test_kubectl_execution(mock_command_environment, fixtures_dir):
         # Test a simple kubectl command that should work
         # First, verify that kubectl is in the PATH with a direct subprocess call
         proc = await asyncio.create_subprocess_exec(
-            "which", "kubectl", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+            "which",
+            "kubectl",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
         )
         stdout, stderr = await proc.communicate()
         assert proc.returncode == 0, "kubectl should be available in PATH"

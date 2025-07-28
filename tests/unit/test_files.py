@@ -633,7 +633,10 @@ async def test_file_explorer_grep_files_per_file_limiting():
 
         # Search with max_results_per_file=3
         result = await explorer.grep_files(
-            pattern="pattern", path="many_matches.txt", max_results_per_file=3, max_files=10
+            pattern="pattern",
+            path="many_matches.txt",
+            max_results_per_file=3,
+            max_files=10,
         )
 
         # Should only get 3 matches from the file (per-file limit)

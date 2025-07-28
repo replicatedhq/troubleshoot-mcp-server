@@ -66,7 +66,9 @@ async def test_subprocess_transport_cleanup_triggers_error():
 
     try:
         # Use the current subprocess_utils extensively
-        from mcp_server_troubleshoot.subprocess_utils import subprocess_exec_with_cleanup
+        from mcp_server_troubleshoot.subprocess_utils import (
+            subprocess_exec_with_cleanup,
+        )
 
         # Create many subprocess operations to stress test the transport handling
         for i in range(25):  # Large number to stress the system

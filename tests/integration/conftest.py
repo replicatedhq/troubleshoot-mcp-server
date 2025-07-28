@@ -33,7 +33,9 @@ class TestAssertions:
 
     @staticmethod
     def assert_api_response_valid(
-        response: List[Any], expected_type: str = "text", contains: Optional[List[str]] = None
+        response: List[Any],
+        expected_type: str = "text",
+        contains: Optional[List[str]] = None,
     ) -> None:
         """
         Assert that an MCP API response is valid and contains expected content.

@@ -318,7 +318,10 @@ async def test_file_operations(tmp_path: Path) -> None:
             from mcp_server_troubleshoot.files import ReadFileArgs
 
             read_args = ReadFileArgs(
-                path="test_data/dir1/file1.txt", start_line=0, end_line=2, verbosity="verbose"
+                path="test_data/dir1/file1.txt",
+                start_line=0,
+                end_line=2,
+                verbosity="verbose",
             )
             read_response = await read_file(read_args)
 

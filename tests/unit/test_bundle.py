@@ -258,7 +258,10 @@ async def test_bundle_manager_download_replicated_url_success_sbctl_token(
             mock_get_call = mock_httpx_constructor.return_value.__aenter__.return_value.get
             mock_get_call.assert_awaited_once_with(
                 REPLICATED_API_URL,
-                headers={"Authorization": "sbctl_token_value", "Content-Type": "application/json"},
+                headers={
+                    "Authorization": "sbctl_token_value",
+                    "Content-Type": "application/json",
+                },
             )
 
             # Verify aiohttp call for actual download
@@ -322,7 +325,10 @@ async def test_bundle_manager_download_replicated_url_token_precedence(
         with patch.dict(
             os.environ,
             # === START MODIFICATION ===
-            {"SBCTL_TOKEN": "sbctl_token_value", "REPLICATED": "replicated_token_value"},
+            {
+                "SBCTL_TOKEN": "sbctl_token_value",
+                "REPLICATED": "replicated_token_value",
+            },
             # === END MODIFICATION ===
             clear=True,
         ):
@@ -332,7 +338,10 @@ async def test_bundle_manager_download_replicated_url_token_precedence(
             mock_get_call = mock_httpx_constructor.return_value.__aenter__.return_value.get
             mock_get_call.assert_awaited_once_with(
                 REPLICATED_API_URL,
-                headers={"Authorization": "sbctl_token_value", "Content-Type": "application/json"},
+                headers={
+                    "Authorization": "sbctl_token_value",
+                    "Content-Type": "application/json",
+                },
             )
 
 
@@ -406,7 +415,9 @@ async def test_bundle_manager_download_replicated_url_api_404(mock_httpx_client)
 
 
 @pytest.mark.asyncio
-async def test_bundle_manager_download_replicated_url_api_other_error(mock_httpx_client):
+async def test_bundle_manager_download_replicated_url_api_other_error(
+    mock_httpx_client,
+):
     """Test error handling for other Replicated API errors."""
     mock_httpx_constructor, mock_response = mock_httpx_client
     # === START MODIFICATION ===
@@ -430,7 +441,9 @@ async def test_bundle_manager_download_replicated_url_api_other_error(mock_httpx
 
 
 @pytest.mark.asyncio
-async def test_bundle_manager_download_replicated_url_missing_signed_uri(mock_httpx_client):
+async def test_bundle_manager_download_replicated_url_missing_signed_uri(
+    mock_httpx_client,
+):
     """Test error handling when 'signedUri' is missing from API response."""
     mock_httpx_constructor, mock_response = mock_httpx_client
     # Configure for success status but missing key in the nested JSON
@@ -511,7 +524,9 @@ async def test_bundle_manager_download_non_replicated_url(mock_aiohttp_download)
 
 
 @pytest.mark.asyncio
-async def test_bundle_manager_download_bundle(mock_aiohttp_download):  # Use fixture as argument
+async def test_bundle_manager_download_bundle(
+    mock_aiohttp_download,
+):  # Use fixture as argument
     """Test that the bundle manager can download a non-Replicated bundle."""
     # Unpack the fixture results
     mock_aiohttp_constructor, mock_aio_session, mock_aio_response = mock_aiohttp_download

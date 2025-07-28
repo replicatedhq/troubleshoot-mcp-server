@@ -199,7 +199,10 @@ def create_minimal_kubeconfig(
             }
         ],
         "contexts": [
-            {"name": "test-context", "context": {"cluster": "test-cluster", "user": "test-user"}}
+            {
+                "name": "test-context",
+                "context": {"cluster": "test-cluster", "user": "test-user"},
+            }
         ],
         "current-context": "test-context",
         "users": [{"name": "test-user", "user": {"token": "test-token-12345"}}],

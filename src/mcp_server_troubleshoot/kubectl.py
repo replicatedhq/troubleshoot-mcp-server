@@ -46,7 +46,8 @@ class KubectlCommandArgs(BaseModel):
     timeout: int = Field(30, description="Timeout in seconds for the command")
     json_output: bool = Field(False, description="Whether to format the output as JSON")
     verbosity: Optional[str] = Field(
-        None, description="Verbosity level for response formatting (minimal|standard|verbose|debug)"
+        None,
+        description="Verbosity level for response formatting (minimal|standard|verbose|debug)",
     )
 
     @field_validator("command")

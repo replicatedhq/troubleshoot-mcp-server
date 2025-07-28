@@ -57,7 +57,8 @@ class ListFilesArgs(BaseModel):
     path: str = Field(description="The path within the bundle to list")
     recursive: bool = Field(False, description="Whether to list recursively")
     verbosity: Optional[str] = Field(
-        None, description="Verbosity level for response formatting (minimal|standard|verbose|debug)"
+        None,
+        description="Verbosity level for response formatting (minimal|standard|verbose|debug)",
     )
 
     @field_validator("path")
@@ -105,7 +106,8 @@ class ReadFileArgs(BaseModel):
         None, description="The line number to end reading at (0-indexed, inclusive)"
     )
     verbosity: Optional[str] = Field(
-        None, description="Verbosity level for response formatting (minimal|standard|verbose|debug)"
+        None,
+        description="Verbosity level for response formatting (minimal|standard|verbose|debug)",
     )
 
     @field_validator("path")
@@ -159,7 +161,8 @@ class GrepFilesArgs(BaseModel):
     max_results_per_file: int = Field(5, description="Maximum number of results to return per file")
     max_files: int = Field(10, description="Maximum number of files to search/return")
     verbosity: Optional[str] = Field(
-        None, description="Verbosity level for response formatting (minimal|standard|verbose|debug)"
+        None,
+        description="Verbosity level for response formatting (minimal|standard|verbose|debug)",
     )
 
     @field_validator("path")
@@ -280,7 +283,8 @@ class GrepResult(BaseModel):
     case_sensitive: bool = Field(description="Whether the search was case-sensitive")
     truncated: bool = Field(description="Whether the results were truncated due to max_results")
     files_truncated: bool = Field(
-        default=False, description="Whether the file list was truncated due to max_files"
+        default=False,
+        description="Whether the file list was truncated due to max_files",
     )
 
 
@@ -592,7 +596,12 @@ class FileExplorer:
                     binary=is_binary,
                 )
 
-        except (PathNotFoundError, InvalidPathError, ReadFileError, FileSystemError) as e:
+        except (
+            PathNotFoundError,
+            InvalidPathError,
+            ReadFileError,
+            FileSystemError,
+        ) as e:
             # Re-raise known errors
             logger.error(f"Error reading file: {str(e)}")
             raise

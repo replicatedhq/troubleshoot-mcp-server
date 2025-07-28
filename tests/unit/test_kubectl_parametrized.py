@@ -199,7 +199,12 @@ async def test_kubectl_command_execution_parameters(command, expected_args, add_
     ],
 )
 async def test_kubectl_error_handling(
-    return_code, stdout_content, stderr_content, expected_exit_code, should_raise, test_factory
+    return_code,
+    stdout_content,
+    stderr_content,
+    expected_exit_code,
+    should_raise,
+    test_factory,
 ):
     """
     Test that the kubectl executor handles errors correctly.

@@ -52,7 +52,12 @@ def main():
 
     try:
         # Send a simple request
-        request = {"jsonrpc": "2.0", "id": "1", "method": "get_tool_definitions", "params": {}}
+        request = {
+            "jsonrpc": "2.0",
+            "id": "1",
+            "method": "get_tool_definitions",
+            "params": {},
+        }
 
         request_str = json.dumps(request) + "\n"
         print(f"Sending request: {request_str.strip()}")

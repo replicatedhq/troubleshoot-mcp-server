@@ -227,7 +227,14 @@ class TestContainerShutdownReliability:
         requests = []
         for i in range(10):
             requests.append(
-                json.dumps({"jsonrpc": "2.0", "method": "tools/list", "params": {}, "id": i + 1})
+                json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "method": "tools/list",
+                        "params": {},
+                        "id": i + 1,
+                    }
+                )
                 + "\n"
             )
 

@@ -105,7 +105,9 @@ async def test_bundle_network_diagnostic_triggers_netstat_error():
 
         # The bundle.py code uses netstat in network diagnostic checks
         # Let's manually call the subprocess that would be used
-        from mcp_server_troubleshoot.subprocess_utils import subprocess_exec_with_cleanup
+        from mcp_server_troubleshoot.subprocess_utils import (
+            subprocess_exec_with_cleanup,
+        )
 
         try:
             # This is the exact call pattern from bundle.py line 1871
@@ -161,7 +163,9 @@ async def test_port_checking_functionality_without_netstat():
         os.environ["PATH"] = "/tmp"  # Path that definitely won't have netstat
 
         # First, demonstrate that the current netstat approach fails
-        from mcp_server_troubleshoot.subprocess_utils import subprocess_exec_with_cleanup
+        from mcp_server_troubleshoot.subprocess_utils import (
+            subprocess_exec_with_cleanup,
+        )
 
         netstat_failed = False
         netstat_error = None

@@ -113,7 +113,9 @@ async def _safe_transport_wait_close(
 
 
 @asynccontextmanager
-async def pipe_transport_reader(pipe: Any) -> AsyncGenerator[asyncio.StreamReader, None]:
+async def pipe_transport_reader(
+    pipe: Any,
+) -> AsyncGenerator[asyncio.StreamReader, None]:
     """
     Async context manager for managing pipe transport with proper cleanup.
 

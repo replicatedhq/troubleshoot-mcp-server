@@ -46,7 +46,9 @@ def parse_args():
 
     # Version command
     version_parser = subparsers.add_parser("version", help="Show version info")
-    version_parser.add_argument("--client", action="store_true", help="Client version only")
+    version_parser.add_argument(
+        "--client", action="store_true", help="Client version only"
+    )
 
     # Get command
     get_parser = subparsers.add_parser("get", help="Display resources")
@@ -100,14 +102,24 @@ def handle_version(args):
     }
 
     if args.client:
-        print(json.dumps(client_version) if args.output == "json" else "Client Version: v1.26.0")
+        print(
+            json.dumps(client_version)
+            if args.output == "json"
+            else "Client Version: v1.26.0"
+        )
         return 0
 
     # Try to get server version too
     api_url = get_api_server_url()
     if not api_url:
-        print(json.dumps(client_version) if args.output == "json" else "Client Version: v1.26.0")
-        print("The connection to the server was refused - did you specify the right host or port?")
+        print(
+            json.dumps(client_version)
+            if args.output == "json"
+            else "Client Version: v1.26.0"
+        )
+        print(
+            "The connection to the server was refused - did you specify the right host or port?"
+        )
         return 1
 
     try:
@@ -123,7 +135,11 @@ def handle_version(args):
         )
         return 0
     except URLError as e:
-        print(json.dumps(client_version) if args.output == "json" else "Client Version: v1.26.0")
+        print(
+            json.dumps(client_version)
+            if args.output == "json"
+            else "Client Version: v1.26.0"
+        )
         print(f"Error communicating with server: {e}")
         return 1
 

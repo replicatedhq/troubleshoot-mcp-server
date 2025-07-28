@@ -76,7 +76,11 @@ class CurlDependencyDetector:
 
     def record_subprocess_call(self, *args, **kwargs) -> None:
         """Record a subprocess call for analysis."""
-        call_info = {"args": args, "kwargs": kwargs, "command": args[0] if args else None}
+        call_info = {
+            "args": args,
+            "kwargs": kwargs,
+            "command": args[0] if args else None,
+        }
         self.subprocess_calls.append(call_info)
 
     def record_curl_error(self, error: Exception) -> None:
@@ -266,7 +270,8 @@ async def test_curl_dependency_with_timeout_handling(
             )
 
             with patch(
-                "asyncio.create_subprocess_exec", side_effect=mock_subprocess_immediate_failure
+                "asyncio.create_subprocess_exec",
+                side_effect=mock_subprocess_immediate_failure,
             ):
                 # The curl dependency failure should occur immediately, before any timeout
                 result = await bundle_manager.check_api_server_available()
@@ -335,7 +340,8 @@ async def test_curl_dependency_environment_simulation(
                 )
 
                 with patch(
-                    "asyncio.create_subprocess_exec", side_effect=mock_subprocess_env_specific
+                    "asyncio.create_subprocess_exec",
+                    side_effect=mock_subprocess_env_specific,
                 ):
                     result = await bundle_manager.check_api_server_available()
 

@@ -27,7 +27,8 @@ from .files import (
     ReadFileArgs,
 )
 from .lifecycle import app_lifespan, AppContext
-from .formatters import get_formatter
+from .formatters import get_formatter, ResponseFormatter
+from .size_limiter import SizeLimiter
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +113,36 @@ def get_file_explorer() -> FileExplorer:
     return _file_explorer
 
 
+def check_response_size(
+    content: str, tool_name: str, formatter: ResponseFormatter
+) -> List[TextContent]:
+    """
+    Single centralized function to check all MCP tool responses for size limits.
+
+    Args:
+        content: The content to check for size
+        tool_name: Name of the tool generating the response (for tool-specific guidance)
+        formatter: Response formatter instance for verbosity and overflow messages
+
+    Returns:
+        List of TextContent with either the original content or an overflow message
+    """
+    size_limiter = SizeLimiter()
+    tokens = size_limiter.estimate_tokens(content)
+
+    if not size_limiter.enabled:
+        # Size checking disabled - return content as-is
+        return [TextContent(type="text", text=content)]
+
+    if tokens <= size_limiter.token_limit:
+        # Content within limits - return as-is
+        return [TextContent(type="text", text=content)]
+    else:
+        # Content exceeds limits - return overflow message
+        overflow_msg = formatter.format_overflow_message(tool_name, tokens, content)
+        return [TextContent(type="text", text=overflow_msg)]
+
+
 @mcp.tool()
 async def initialize_bundle(args: InitializeBundleArgs) -> List[TextContent]:
     """
@@ -153,7 +184,7 @@ async def initialize_bundle(args: InitializeBundleArgs) -> List[TextContent]:
 
         # Format response using the formatter
         response = formatter.format_bundle_initialization(result, api_server_available, diagnostics)
-        return [TextContent(type="text", text=response)]
+        return check_response_size(response, "initialize_bundle", formatter)
 
     except BundleManagerError as e:
         error_message = f"Failed to initialize bundle: {str(e)}"
@@ -167,7 +198,7 @@ async def initialize_bundle(args: InitializeBundleArgs) -> List[TextContent]:
             logger.error(f"Failed to get diagnostics: {diag_error}")
 
         formatted_error = formatter.format_error(error_message, diagnostics)
-        return [TextContent(type="text", text=formatted_error)]
+        return check_response_size(formatted_error, "initialize_bundle", formatter)
     except Exception as e:
         error_message = f"Unexpected error initializing bundle: {str(e)}"
         logger.exception(error_message)
@@ -180,7 +211,7 @@ async def initialize_bundle(args: InitializeBundleArgs) -> List[TextContent]:
             logger.error(f"Failed to get diagnostics: {diag_error}")
 
         formatted_error = formatter.format_error(error_message, diagnostics)
-        return [TextContent(type="text", text=formatted_error)]
+        return check_response_size(formatted_error, "initialize_bundle", formatter)
 
 
 @mcp.tool()
@@ -208,18 +239,18 @@ async def list_available_bundles(args: ListAvailableBundlesArgs) -> List[TextCon
         bundles = await bundle_manager.list_available_bundles(args.include_invalid)
 
         response = formatter.format_bundle_list(bundles)
-        return [TextContent(type="text", text=response)]
+        return check_response_size(response, "list_bundles", formatter)
 
     except BundleManagerError as e:
         error_message = f"Failed to list bundles: {str(e)}"
         logger.error(error_message)
         formatted_error = formatter.format_error(error_message)
-        return [TextContent(type="text", text=formatted_error)]
+        return check_response_size(formatted_error, "list_bundles", formatter)
     except Exception as e:
         error_message = f"Unexpected error listing bundles: {str(e)}"
         logger.exception(error_message)
         formatted_error = formatter.format_error(error_message)
-        return [TextContent(type="text", text=formatted_error)]
+        return check_response_size(formatted_error, "list_bundles", formatter)
 
 
 @mcp.tool()
@@ -256,7 +287,7 @@ async def kubectl(args: KubectlCommandArgs) -> List[TextContent]:
             )
             logger.error("No bundle initialized for kubectl command")
             formatted_error = formatter.format_error(error_message)
-            return [TextContent(type="text", text=formatted_error)]
+            return check_response_size(formatted_error, "kubectl", formatter)
 
         # Check if this is a host-only bundle
         if active_bundle.host_only_bundle:
@@ -267,7 +298,7 @@ async def kubectl(args: KubectlCommandArgs) -> List[TextContent]:
             )
             logger.info("kubectl command attempted on host-only bundle")
             formatted_error = formatter.format_error(error_message)
-            return [TextContent(type="text", text=formatted_error)]
+            return check_response_size(formatted_error, "kubectl", formatter)
 
         # Check if the API server is available before attempting kubectl
         api_server_available = await bundle_manager.check_api_server_available()
@@ -280,14 +311,14 @@ async def kubectl(args: KubectlCommandArgs) -> List[TextContent]:
             )
             logger.error("API server not available for kubectl command")
             formatted_error = formatter.format_error(error_message, diagnostics)
-            return [TextContent(type="text", text=formatted_error)]
+            return check_response_size(formatted_error, "kubectl", formatter)
 
         # Execute the kubectl command
         result = await get_kubectl_executor().execute(args.command, args.timeout, args.json_output)
 
         # Format response using the formatter
         response = formatter.format_kubectl_result(result)
-        return [TextContent(type="text", text=response)]
+        return check_response_size(response, "kubectl", formatter)
 
     except KubectlError as e:
         error_message = f"kubectl command failed: {str(e)}"
@@ -309,7 +340,7 @@ async def kubectl(args: KubectlCommandArgs) -> List[TextContent]:
             logger.error(f"Failed to get diagnostics: {diag_error}")
 
         formatted_error = formatter.format_error(error_message, diagnostics)
-        return [TextContent(type="text", text=formatted_error)]
+        return check_response_size(formatted_error, "kubectl", formatter)
     except BundleManagerError as e:
         error_message = f"Bundle error: {str(e)}"
         logger.error(error_message)
@@ -322,7 +353,7 @@ async def kubectl(args: KubectlCommandArgs) -> List[TextContent]:
             logger.error(f"Failed to get diagnostics: {diag_error}")
 
         formatted_error = formatter.format_error(error_message, diagnostics)
-        return [TextContent(type="text", text=formatted_error)]
+        return check_response_size(formatted_error, "kubectl", formatter)
     except Exception as e:
         error_message = f"Unexpected error executing kubectl command: {str(e)}"
         logger.exception(error_message)
@@ -335,7 +366,7 @@ async def kubectl(args: KubectlCommandArgs) -> List[TextContent]:
             logger.error(f"Failed to get diagnostics: {diag_error}")
 
         formatted_error = formatter.format_error(error_message, diagnostics)
-        return [TextContent(type="text", text=formatted_error)]
+        return check_response_size(formatted_error, "kubectl", formatter)
 
 
 @mcp.tool()
@@ -366,23 +397,23 @@ async def list_files(args: ListFilesArgs) -> List[TextContent]:
     try:
         result = await get_file_explorer().list_files(args.path, args.recursive)
         response = formatter.format_file_list(result)
-        return [TextContent(type="text", text=response)]
+        return check_response_size(response, "list_files", formatter)
 
     except FileSystemError as e:
         error_message = f"File system error: {str(e)}"
         logger.error(error_message)
         formatted_error = formatter.format_error(error_message)
-        return [TextContent(type="text", text=formatted_error)]
+        return check_response_size(formatted_error, "list_files", formatter)
     except BundleManagerError as e:
         error_message = f"Bundle error: {str(e)}"
         logger.error(error_message)
         formatted_error = formatter.format_error(error_message)
-        return [TextContent(type="text", text=formatted_error)]
+        return check_response_size(formatted_error, "list_files", formatter)
     except Exception as e:
         error_message = f"Unexpected error listing files: {str(e)}"
         logger.exception(error_message)
         formatted_error = formatter.format_error(error_message)
-        return [TextContent(type="text", text=formatted_error)]
+        return check_response_size(formatted_error, "list_files", formatter)
 
 
 @mcp.tool()
@@ -414,23 +445,23 @@ async def read_file(args: ReadFileArgs) -> List[TextContent]:
     try:
         result = await get_file_explorer().read_file(args.path, args.start_line, args.end_line)
         response = formatter.format_file_content(result)
-        return [TextContent(type="text", text=response)]
+        return check_response_size(response, "read_file", formatter)
 
     except FileSystemError as e:
         error_message = f"File system error: {str(e)}"
         logger.error(error_message)
         formatted_error = formatter.format_error(error_message)
-        return [TextContent(type="text", text=formatted_error)]
+        return check_response_size(formatted_error, "read_file", formatter)
     except BundleManagerError as e:
         error_message = f"Bundle error: {str(e)}"
         logger.error(error_message)
         formatted_error = formatter.format_error(error_message)
-        return [TextContent(type="text", text=formatted_error)]
+        return check_response_size(formatted_error, "read_file", formatter)
     except Exception as e:
         error_message = f"Unexpected error reading file: {str(e)}"
         logger.exception(error_message)
         formatted_error = formatter.format_error(error_message)
-        return [TextContent(type="text", text=formatted_error)]
+        return check_response_size(formatted_error, "read_file", formatter)
 
 
 @mcp.tool()
@@ -476,23 +507,23 @@ async def grep_files(args: GrepFilesArgs) -> List[TextContent]:
         )
 
         response = formatter.format_grep_results(result)
-        return [TextContent(type="text", text=response)]
+        return check_response_size(response, "grep_files", formatter)
 
     except FileSystemError as e:
         error_message = f"File system error: {str(e)}"
         logger.error(error_message)
         formatted_error = formatter.format_error(error_message)
-        return [TextContent(type="text", text=formatted_error)]
+        return check_response_size(formatted_error, "grep_files", formatter)
     except BundleManagerError as e:
         error_message = f"Bundle error: {str(e)}"
         logger.error(error_message)
         formatted_error = formatter.format_error(error_message)
-        return [TextContent(type="text", text=formatted_error)]
+        return check_response_size(formatted_error, "grep_files", formatter)
     except Exception as e:
         error_message = f"Unexpected error searching files: {str(e)}"
         logger.exception(error_message)
         formatted_error = formatter.format_error(error_message)
-        return [TextContent(type="text", text=formatted_error)]
+        return check_response_size(formatted_error, "grep_files", formatter)
 
 
 # Helper function to initialize the bundle manager with a specified directory

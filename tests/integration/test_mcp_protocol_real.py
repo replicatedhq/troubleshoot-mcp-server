@@ -103,7 +103,10 @@ class TestMCPProtocolCompliance:
                         {
                             "protocolVersion": "2024-11-05",
                             "capabilities": {"tools": {}},
-                            "clientInfo": {"name": f"test-client-{i}", "version": "1.0.0"},
+                            "clientInfo": {
+                                "name": f"test-client-{i}",
+                                "version": "1.0.0",
+                            },
                         },
                     )
                     return response

@@ -45,7 +45,11 @@ MAX_INITIALIZATION_TIMEOUT = int(
 )
 
 # Feature flags from environment variables
-CLEANUP_ORPHANED = os.environ.get("SBCTL_CLEANUP_ORPHANED", "true").lower() in ("true", "1", "yes")
+CLEANUP_ORPHANED = os.environ.get("SBCTL_CLEANUP_ORPHANED", "true").lower() in (
+    "true",
+    "1",
+    "yes",
+)
 ALLOW_ALTERNATIVE_KUBECONFIG = os.environ.get(
     "SBCTL_ALLOW_ALTERNATIVE_KUBECONFIG", "true"
 ).lower() in ("true", "1", "yes")
@@ -97,7 +101,8 @@ class BundleMetadata(BaseModel):
     kubeconfig_path: Path = Field(description="The path to the kubeconfig file")
     initialized: bool = Field(description="Whether the bundle has been initialized with sbctl")
     host_only_bundle: bool = Field(
-        False, description="Whether this bundle contains only host resources (no cluster resources)"
+        False,
+        description="Whether this bundle contains only host resources (no cluster resources)",
     )
 
 
@@ -108,10 +113,12 @@ class InitializeBundleArgs(BaseModel):
 
     source: str = Field(description="The source of the bundle (URL or local path)")
     force: bool = Field(
-        False, description="Whether to force re-initialization if a bundle is already active"
+        False,
+        description="Whether to force re-initialization if a bundle is already active",
     )
     verbosity: Optional[str] = Field(
-        None, description="Verbosity level for response formatting (minimal|standard|verbose|debug)"
+        None,
+        description="Verbosity level for response formatting (minimal|standard|verbose|debug)",
     )
 
     @field_validator("source")
@@ -180,10 +187,12 @@ class ListAvailableBundlesArgs(BaseModel):
     """
 
     include_invalid: bool = Field(
-        False, description="Whether to include invalid or inaccessible bundles in the results"
+        False,
+        description="Whether to include invalid or inaccessible bundles in the results",
     )
     verbosity: Optional[str] = Field(
-        None, description="Verbosity level for response formatting (minimal|standard|verbose|debug)"
+        None,
+        description="Verbosity level for response formatting (minimal|standard|verbose|debug)",
     )
 
 
@@ -797,7 +806,8 @@ class BundleManager:
                                                     )
                                                     try:
                                                         safe_copy_file(
-                                                            announced_kubeconfig, kubeconfig_path
+                                                            announced_kubeconfig,
+                                                            kubeconfig_path,
                                                         )
                                                         logger.info(
                                                             f"Successfully copied kubeconfig to {kubeconfig_path}"
@@ -1190,7 +1200,10 @@ class BundleManager:
 
             # Search for any newly created kubeconfig files in common locations if enabled
             if ALLOW_ALTERNATIVE_KUBECONFIG:
-                for pattern in ["/tmp/kubeconfig*", "/var/folders/*/*/local-kubeconfig-*"]:
+                for pattern in [
+                    "/tmp/kubeconfig*",
+                    "/var/folders/*/*/local-kubeconfig-*",
+                ]:
                     for path in glob.glob(pattern):
                         kubeconfig_file = Path(path)
                         if kubeconfig_file not in alternative_kubeconfig_paths:
@@ -1348,7 +1361,10 @@ class BundleManager:
                                                 logger.debug(
                                                     f"Process {pid} terminated successfully"
                                                 )
-                                        except (ProcessLookupError, PermissionError) as e:
+                                        except (
+                                            ProcessLookupError,
+                                            PermissionError,
+                                        ) as e:
                                             logger.debug(f"Error terminating process {pid}: {e}")
                                 except (
                                     psutil.NoSuchProcess,
@@ -2032,7 +2048,7 @@ class BundleManager:
                                 path=str(file_path),
                                 relative_path=file_path.name,
                                 name=file_path.name,
-                                size_bytes=file_path.stat().st_size if file_path.exists() else 0,
+                                size_bytes=(file_path.stat().st_size if file_path.exists() else 0),
                                 modified_time=(
                                     file_path.stat().st_mtime if file_path.exists() else 0
                                 ),
@@ -2144,7 +2160,11 @@ class BundleManager:
                                 and any("sbctl" in arg for arg in proc.info["cmdline"])
                             ):
                                 sbctl_processes.append(proc)
-                        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                        except (
+                            psutil.NoSuchProcess,
+                            psutil.AccessDenied,
+                            psutil.ZombieProcess,
+                        ):
                             # Process disappeared or access denied - skip it
                             continue
 

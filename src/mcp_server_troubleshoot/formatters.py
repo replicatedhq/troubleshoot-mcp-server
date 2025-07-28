@@ -394,6 +394,119 @@ class ResponseFormatter:
                 response += f"\n\nDiagnostic information:\n```json\n{json.dumps(diagnostics, separators=(',', ':'))}\n```"
             return response
 
+    def format_overflow_message(self, tool_name: str, estimated_tokens: int, content: str) -> str:
+        """
+        Format helpful overflow message with tool-specific guidance.
+
+        Args:
+            tool_name: Name of the MCP tool that generated the content
+            estimated_tokens: Estimated token count of the content
+            content: The original content that was too large
+
+        Returns:
+            Formatted overflow message with tool-specific suggestions and content preview
+        """
+        # Default token limit (can be made configurable)
+        token_limit = 25000
+
+        # Base overflow message
+        message = f"Content too large ({estimated_tokens:,} tokens, limit: {token_limit:,}).\n\n"
+
+        # Tool-specific suggestions
+        suggestions = self._get_tool_specific_suggestions(tool_name)
+        if suggestions:
+            message += "Suggestions to reduce output size:\n"
+            for i, suggestion in enumerate(suggestions, 1):
+                message += f"{i}. {suggestion}\n"
+            message += "\n"
+
+        # Add content preview based on verbosity level
+        preview = self._generate_content_preview(content)
+        if preview:
+            message += preview
+
+        return message
+
+    def _get_tool_specific_suggestions(self, tool_name: str) -> List[str]:
+        """Get tool-specific suggestions for reducing output size."""
+        suggestions_map = {
+            "list_files": [
+                "Use non-recursive listing: list_files(recursive=false)",
+                'Target specific directories: list_files(path="specific/subdirectory")',
+                'Use minimal verbosity: list_files(verbosity="minimal")',
+            ],
+            "read_file": [
+                "Read specific line ranges: read_file(start_line=1, end_line=100)",
+                "Read smaller chunks: read_file(start_line=1, end_line=50)",
+                "Target specific sections of the file",
+            ],
+            "grep_files": [
+                "Limit results per file: grep_files(max_results=50, max_files=5)",
+                'Use specific file patterns: grep_files(glob_pattern="*.yaml")',
+                'Target specific directories: grep_files(path="specific/subdirectory")',
+                'Use minimal verbosity: grep_files(verbosity="minimal")',
+            ],
+            "kubectl": [
+                "Query specific resources: kubectl get pods --selector=app=myapp",
+                "Use different output formats: kubectl get pods -o name",
+                "Target specific namespaces: kubectl get pods -n specific-namespace",
+                "Limit results: kubectl get pods --limit=50",
+            ],
+            "initialize_bundle": ['Use minimal verbosity: initialize_bundle(verbosity="minimal")'],
+            "list_bundles": ['Use minimal verbosity: list_bundles(verbosity="minimal")'],
+        }
+
+        return suggestions_map.get(
+            tool_name,
+            [
+                'Use minimal verbosity if supported: tool_name(verbosity="minimal")',
+                "Apply filtering parameters to reduce data scope",
+                "Target more specific data subsets",
+            ],
+        )
+
+    def _generate_content_preview(self, content: str) -> str:
+        """Generate a content preview based on verbosity level."""
+        if self.verbosity == VerbosityLevel.MINIMAL:
+            # Very brief preview for minimal mode
+            preview_chars = 100
+            preview_text = content[:preview_chars]
+            if len(content) > preview_chars:
+                preview_text += "..."
+            return f"First {preview_chars} characters:\n{preview_text}\n"
+
+        elif self.verbosity == VerbosityLevel.STANDARD:
+            # Moderate preview for standard mode
+            preview_chars = 200
+            preview_text = content[:preview_chars]
+            if len(content) > preview_chars:
+                preview_text += "..."
+            return f"Showing first {preview_chars} characters:\n{preview_text}\n"
+
+        else:  # VERBOSE or DEBUG
+            # More detailed preview with structure info
+            preview_chars = 500
+            preview_text = content[:preview_chars]
+            if len(content) > preview_chars:
+                preview_text += "..."
+
+            # Try to provide structural information
+            lines = content.split("\n")
+            total_lines = len(lines)
+
+            preview_msg = (
+                f"Showing first {preview_chars} characters (content has {total_lines:,} lines):\n"
+            )
+            preview_msg += "```\n" + preview_text + "\n```\n"
+
+            # Add helpful context about the content structure
+            if content.strip().startswith("{") or content.strip().startswith("["):
+                preview_msg += "\n*Note: Content appears to be JSON format*\n"
+            elif "```" in content:
+                preview_msg += "\n*Note: Content contains code blocks or formatted sections*\n"
+
+            return preview_msg
+
     def _format_file_size(self, size_bytes: int) -> str:
         """Format file size in human-readable format."""
         if size_bytes < 1024:

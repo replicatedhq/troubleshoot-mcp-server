@@ -304,14 +304,20 @@ class TestAPIServerLifecycle:
             except Exception as e:
                 api_error = str(e)
 
-        diagnostics["api_server_status"] = {"available": api_available, "error": api_error}
+        diagnostics["api_server_status"] = {
+            "available": api_available,
+            "error": api_error,
+        }
 
         # Resource usage (simplified without psutil)
         resource_usage = {}
         if bundle_manager.sbctl_process:
             try:
                 os.kill(bundle_manager.sbctl_process.pid, 0)
-                resource_usage = {"pid": bundle_manager.sbctl_process.pid, "process_exists": True}
+                resource_usage = {
+                    "pid": bundle_manager.sbctl_process.pid,
+                    "process_exists": True,
+                }
             except OSError:
                 resource_usage = {"process_exists": False}
 

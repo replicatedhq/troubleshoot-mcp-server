@@ -172,7 +172,11 @@ class KubeAPIHandler(http.server.BaseHTTPRequestHandler):
                                         "name": "mock-node-1",
                                         "uid": "00000000-0000-0000-0000-000000000020",
                                     },
-                                    "status": {"conditions": [{"type": "Ready", "status": "True"}]},
+                                    "status": {
+                                        "conditions": [
+                                            {"type": "Ready", "status": "True"}
+                                        ]
+                                    },
                                 }
                             ],
                         }
@@ -182,7 +186,9 @@ class KubeAPIHandler(http.server.BaseHTTPRequestHandler):
             else:
                 # Generic empty list for other resources
                 self.wfile.write(
-                    json.dumps({"kind": "List", "apiVersion": "v1", "items": []}).encode()
+                    json.dumps(
+                        {"kind": "List", "apiVersion": "v1", "items": []}
+                    ).encode()
                 )
                 return
 
@@ -227,7 +233,9 @@ class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     """Threaded TCP Server with socket reuse capabilities."""
 
     allow_reuse_address = True  # Allow quick reuse of sockets
-    daemon_threads = True  # Daemon threads terminate automatically when main thread exits
+    daemon_threads = (
+        True  # Daemon threads terminate automatically when main thread exits
+    )
 
 
 def start_mock_api_server(port=None):
@@ -263,7 +271,9 @@ def start_mock_api_server(port=None):
 
         try:
             httpd = ThreadedTCPServer(("", new_port), handler)
-            logger.info(f"Successfully started mock Kubernetes API server on port {new_port}")
+            logger.info(
+                f"Successfully started mock Kubernetes API server on port {new_port}"
+            )
 
             # Store the actual port used in an environment variable
             os.environ["MOCK_K8S_API_PORT"] = str(new_port)
@@ -293,10 +303,16 @@ def create_kubeconfig(directory):
         "apiVersion": "v1",
         "kind": "Config",
         "clusters": [
-            {"name": "mock-cluster", "cluster": {"server": f"http://localhost:{api_port}"}}
+            {
+                "name": "mock-cluster",
+                "cluster": {"server": f"http://localhost:{api_port}"},
+            }
         ],
         "contexts": [
-            {"name": "mock-context", "context": {"cluster": "mock-cluster", "user": "mock-user"}}
+            {
+                "name": "mock-context",
+                "context": {"cluster": "mock-cluster", "user": "mock-user"},
+            }
         ],
         "current-context": "mock-context",
         "users": [{"name": "mock-user", "user": {}}],
@@ -365,7 +381,9 @@ def serve_bundle(bundle_path):
 def main():
     """Parse arguments and run mock sbctl."""
     logger.debug("Starting mock sbctl command parser")
-    parser = argparse.ArgumentParser(description="Mock sbctl implementation for testing")
+    parser = argparse.ArgumentParser(
+        description="Mock sbctl implementation for testing"
+    )
     subparsers = parser.add_subparsers(dest="command", help="Sub-command to execute")
 
     # Version command - creates 'version' subcommand
