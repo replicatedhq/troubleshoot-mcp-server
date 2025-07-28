@@ -268,9 +268,9 @@ async def test_file_explorer_read_file():
 
         # Verify behavior expectations
         assert isinstance(result, FileContentResult), "Result should be a FileContentResult"
-        assert (
-            result.path == "cluster-resources/pods/kube-system.json"
-        ), "Path should be preserved in result"
+        assert result.path == "cluster-resources/pods/kube-system.json", (
+            "Path should be preserved in result"
+        )
         assert "test-pod" in result.content, "Content should match expected JSON content"
         assert result.binary is False, "JSON file should not be marked as binary"
         assert result.total_lines > 0, "Line count should be available"
@@ -576,21 +576,21 @@ def test_file_explorer_normalize_path():
 
         # Test 1: Normalizing a relative path
         normalized = explorer._normalize_path("cluster-resources")
-        assert (
-            normalized == bundle_path / "cluster-resources"
-        ), "Relative path should be resolved to absolute path"
+        assert normalized == bundle_path / "cluster-resources", (
+            "Relative path should be resolved to absolute path"
+        )
 
         # Test 2: Normalizing a path with leading slashes
         normalized = explorer._normalize_path("/cluster-resources")
-        assert (
-            normalized == bundle_path / "cluster-resources"
-        ), "Leading slashes should be handled properly"
+        assert normalized == bundle_path / "cluster-resources", (
+            "Leading slashes should be handled properly"
+        )
 
         # Test 3: Normalizing a nested path
         normalized = explorer._normalize_path("cluster-resources/pods")
-        assert (
-            normalized == bundle_path / "cluster-resources" / "pods"
-        ), "Nested paths should be resolved correctly"
+        assert normalized == bundle_path / "cluster-resources" / "pods", (
+            "Nested paths should be resolved correctly"
+        )
 
         # Test 4: Security check - block directory traversal attempts
         with pytest.raises(InvalidPathError):

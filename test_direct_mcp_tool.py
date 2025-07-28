@@ -57,7 +57,8 @@ async def test_direct_mcp_tool():
 
             # Call the MCP tool directly
             result = await asyncio.wait_for(
-                initialize_bundle(args), timeout=15.0  # 15 second timeout
+                initialize_bundle(args),
+                timeout=15.0,  # 15 second timeout
             )
 
             elapsed = time.time() - start_time

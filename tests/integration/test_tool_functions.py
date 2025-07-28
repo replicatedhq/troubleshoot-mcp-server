@@ -237,9 +237,9 @@ async def test_pydantic_validation_invalid_parameters(bundle_storage_dir):
 
     # Verify the error indicates path validation failure
     error_msg = str(exc_info.value)
-    assert (
-        "Path cannot contain directory traversal" in error_msg
-    ), "Should indicate path validation error"
+    assert "Path cannot contain directory traversal" in error_msg, (
+        "Should indicate path validation error"
+    )
 
 
 @pytest.mark.asyncio

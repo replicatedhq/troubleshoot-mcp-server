@@ -76,9 +76,9 @@ class TestAssertions:
         for attr, expected in expected_attrs.items():
             assert hasattr(obj, attr), f"Object should have attribute '{attr}'"
             actual = getattr(obj, attr)
-            assert (
-                actual == expected
-            ), f"Attribute '{attr}' value mismatch. Expected: {expected}, Got: {actual}"
+            assert actual == expected, (
+                f"Attribute '{attr}' value mismatch. Expected: {expected}, Got: {actual}"
+            )
 
     @staticmethod
     async def assert_asyncio_timeout(coro, timeout: float = 0.1) -> None:

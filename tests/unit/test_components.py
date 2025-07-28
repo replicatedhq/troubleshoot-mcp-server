@@ -73,9 +73,9 @@ async def test_bundle_initialization(mock_command_environment, fixtures_dir):
 
         # Verify diagnostic information
         diagnostics = await bundle_manager.get_diagnostic_info()
-        assert diagnostics[
-            "bundle_initialized"
-        ], "Bundle should be marked as initialized in diagnostics"
+        assert diagnostics["bundle_initialized"], (
+            "Bundle should be marked as initialized in diagnostics"
+        )
 
         # Clean up the bundle manager
         await bundle_manager.cleanup()
@@ -225,9 +225,9 @@ async def test_file_explorer_behavior(test_file_setup):
     assert grep_result.files_searched > 0, "Should search multiple files"
 
     # At least one match should be from our files
-    assert any(
-        "file" in match.line for match in grep_result.matches
-    ), "Should find 'file' string in matches"
+    assert any("file" in match.line for match in grep_result.matches), (
+        "Should find 'file' string in matches"
+    )
 
     # Test 4: Case sensitivity behavior
     # Our test_file_setup fixture creates a file with UPPERCASE text for these tests

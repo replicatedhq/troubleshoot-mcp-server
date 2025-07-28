@@ -118,19 +118,19 @@ def test_build_config_changes_reflected_in_tests():
     conftest_content = conftest_path.read_text()
 
     # Verify the problematic caching code was removed
-    assert (
-        "Using existing container image for tests" not in conftest_content
-    ), "The problematic caching logic should have been removed from conftest.py"
+    assert "Using existing container image for tests" not in conftest_content, (
+        "The problematic caching logic should have been removed from conftest.py"
+    )
 
     # Verify the fix is in place
-    assert (
-        "Building container image (Podman will use layer cache" in conftest_content
-    ), "The fix to always build container images should be present in conftest.py"
+    assert "Building container image (Podman will use layer cache" in conftest_content, (
+        "The fix to always build container images should be present in conftest.py"
+    )
 
     # Verify we always build (no dangerous skip logic)
-    assert (
-        "Always run the build process" in conftest_content
-    ), "Tests should always run build process and rely on Podman layer caching"
+    assert "Always run the build process" in conftest_content, (
+        "Tests should always run build process and rely on Podman layer caching"
+    )
 
 
 def test_sbctl_installation_path_is_correct():
@@ -147,14 +147,14 @@ def test_sbctl_installation_path_is_correct():
     config_content = melange_config.read_text()
 
     # Verify the fix is in place
-    assert (
-        "${{targets.destdir}}/usr/bin" in config_content
-    ), "sbctl should be installed to ${{targets.destdir}}/usr/bin for proper packaging"
+    assert "${{targets.destdir}}/usr/bin" in config_content, (
+        "sbctl should be installed to ${{targets.destdir}}/usr/bin for proper packaging"
+    )
 
     # Verify the broken pattern is not present
-    assert (
-        "/usr/local/bin/sbctl" not in config_content
-    ), "sbctl should not be installed to /usr/local/bin (the broken path)"
+    assert "/usr/local/bin/sbctl" not in config_content, (
+        "sbctl should not be installed to /usr/local/bin (the broken path)"
+    )
 
     # Verify the installation command sequence is correct
     lines = config_content.split("\n")

@@ -7,6 +7,7 @@ package:
   dependencies:
     runtime:
       - python3
+      - py3-psutil  # Required for process management (replaces ps/pkill)
 
 environment:
   contents:

@@ -248,12 +248,12 @@ def test_fixes_are_properly_implemented():
 
     # Verify socket import and usage
     assert "import socket" in bundle_source, "Should import socket module"
-    assert (
-        "_check_port_listening_python" in bundle_source
-    ), "Should have Python port checking method"
-    assert (
-        "socket.socket(socket.AF_INET, socket.SOCK_STREAM)" in bundle_source
-    ), "Should use socket for port checking"
+    assert "_check_port_listening_python" in bundle_source, (
+        "Should have Python port checking method"
+    )
+    assert "socket.socket(socket.AF_INET, socket.SOCK_STREAM)" in bundle_source, (
+        "Should use socket for port checking"
+    )
 
     # Verify netstat is no longer used in the port checking code
     # (It might still be mentioned in comments or documentation)
@@ -262,9 +262,9 @@ def test_fixes_are_properly_implemented():
         if "netstat" in line.lower() and "subprocess_exec_with_cleanup(" in line:
             netstat_usage_lines.append(f"Line {line_num}: {line.strip()}")
 
-    assert (
-        len(netstat_usage_lines) == 0
-    ), f"Found active netstat usage that should be replaced: {netstat_usage_lines}"
+    assert len(netstat_usage_lines) == 0, (
+        f"Found active netstat usage that should be replaced: {netstat_usage_lines}"
+    )
 
     print("✅ Both fixes are properly implemented in the codebase:")
     print("  - subprocess_utils: Python 3.13 transport handling")

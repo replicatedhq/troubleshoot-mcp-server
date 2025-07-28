@@ -134,7 +134,7 @@ class TestMCPProtocolLifecycle:
 
             actual_tools = {tool["name"] for tool in tools}
             assert expected_tools.issubset(actual_tools), (
-                f"Missing expected tools. Expected: {expected_tools}, " f"Actual: {actual_tools}"
+                f"Missing expected tools. Expected: {expected_tools}, Actual: {actual_tools}"
             )
 
             # Verify each tool has required properties
@@ -171,18 +171,18 @@ class TestMCPProtocolLifecycle:
             assert len(content) > 0, "initialize_bundle should return content"
 
             result_text = content[0].get("text", "")
-            assert (
-                "successfully" in result_text.lower() or "initialized" in result_text.lower()
-            ), f"Bundle initialization appears to have failed. Response: {result_text}"
+            assert "successfully" in result_text.lower() or "initialized" in result_text.lower(), (
+                f"Bundle initialization appears to have failed. Response: {result_text}"
+            )
 
             # Verify bundle is now accessible via list_available_bundles
             bundles_content = await client.call_tool("list_available_bundles")
             assert len(bundles_content) > 0, "Should have at least one bundle after initialization"
 
             bundles_text = bundles_content[0].get("text", "")
-            assert (
-                bundle_name in bundles_text
-            ), f"Loaded bundle {bundle_name} should appear in bundle list: {bundles_text}"
+            assert bundle_name in bundles_text, (
+                f"Loaded bundle {bundle_name} should appear in bundle list: {bundles_text}"
+            )
 
     async def test_file_operations_via_protocol(self, temp_bundle_dir, test_bundle_path):
         """
@@ -323,16 +323,16 @@ class TestMCPProtocolLifecycle:
 
             # It's OK if kubectl exec fails - the important thing is it doesn't crash
             # and returns a meaningful response
-            assert (
-                len(kubectl_text.strip()) > 0
-            ), "kubectl exec should return some response, even if it's an error message"
+            assert len(kubectl_text.strip()) > 0, (
+                "kubectl exec should return some response, even if it's an error message"
+            )
 
             # Verify server is still responsive after kubectl exec
             # by making another tool call
             tools_response = await client.send_request("tools/list")
-            assert (
-                "result" in tools_response
-            ), "Server should still be responsive after kubectl exec"
+            assert "result" in tools_response, (
+                "Server should still be responsive after kubectl exec"
+            )
 
     async def test_kubectl_interactive_commands_handling(self, temp_bundle_dir, test_bundle_path):
         """
@@ -376,9 +376,9 @@ class TestMCPProtocolLifecycle:
 
                 # Verify server is still responsive after each command
                 tools_response = await client.send_request("tools/list")
-                assert (
-                    "result" in tools_response
-                ), f"Server should be responsive after kubectl {cmd}"
+                assert "result" in tools_response, (
+                    f"Server should be responsive after kubectl {cmd}"
+                )
 
 
 class TestMCPProtocolErrorHandling:
@@ -408,9 +408,9 @@ class TestMCPProtocolErrorHandling:
                 # If it doesn't throw, check that error is reported in content
                 assert len(content) > 0, "Should return error content"
                 result_text = content[0].get("text", "")
-                assert (
-                    "error" in result_text.lower() or "not found" in result_text.lower()
-                ), f"Should report error for non-existent bundle: {result_text}"
+                assert "error" in result_text.lower() or "not found" in result_text.lower(), (
+                    f"Should report error for non-existent bundle: {result_text}"
+                )
 
             except RuntimeError as e:
                 # It's also acceptable for this to raise an RPC error
@@ -444,15 +444,15 @@ class TestMCPProtocolErrorHandling:
                 # Should either throw or return error in content
                 if len(content) > 0:
                     result_text = content[0].get("text", "")
-                    assert (
-                        "error" in result_text.lower() or "not found" in result_text.lower()
-                    ), f"Should report error for non-existent file: {result_text}"
+                    assert "error" in result_text.lower() or "not found" in result_text.lower(), (
+                        f"Should report error for non-existent file: {result_text}"
+                    )
 
             except RuntimeError as e:
                 # It's also acceptable for this to raise an RPC error
-                assert (
-                    "error" in str(e).lower() or "not found" in str(e).lower()
-                ), f"Error should be descriptive: {e}"
+                assert "error" in str(e).lower() or "not found" in str(e).lower(), (
+                    f"Error should be descriptive: {e}"
+                )
 
     async def test_invalid_tool_call_via_protocol(self, temp_bundle_dir):
         """

@@ -5,7 +5,6 @@ These tests validate that the actual built container images work correctly
 in production scenarios, independent of host system setup.
 """
 
-import os
 import pytest
 import subprocess
 import uuid
@@ -64,9 +63,9 @@ def test_container_has_required_tools_isolated(container_image: str):
                 f"This indicates the tool is not properly packaged. "
                 f"returncode: {result.returncode}, stdout: {result.stdout}, stderr: {result.stderr}"
             )
-            assert (
-                "Usage:" in result.stdout or "usage:" in result.stdout
-            ), f"sbctl --help output doesn't contain expected usage text: {result.stdout}"
+            assert "Usage:" in result.stdout or "usage:" in result.stdout, (
+                f"sbctl --help output doesn't contain expected usage text: {result.stdout}"
+            )
 
         elif tool_name == "kubectl":
             # Test kubectl exists and works
@@ -94,9 +93,9 @@ def test_container_has_required_tools_isolated(container_image: str):
                 f"This indicates the tool is not properly packaged. "
                 f"returncode: {result.returncode}, stdout: {result.stdout}, stderr: {result.stderr}"
             )
-            assert (
-                "Client Version:" in result.stdout
-            ), f"kubectl version output doesn't contain expected version text: {result.stdout}"
+            assert "Client Version:" in result.stdout, (
+                f"kubectl version output doesn't contain expected version text: {result.stdout}"
+            )
 
         elif tool_name == "python3":
             # Test python3 exists and works
@@ -123,9 +122,9 @@ def test_container_has_required_tools_isolated(container_image: str):
                 f"This indicates the tool is not properly packaged. "
                 f"returncode: {result.returncode}, stdout: {result.stdout}, stderr: {result.stderr}"
             )
-            assert (
-                "Python" in result.stdout
-            ), f"python3 --version output doesn't contain expected version text: {result.stdout}"
+            assert "Python" in result.stdout, (
+                f"python3 --version output doesn't contain expected version text: {result.stdout}"
+            )
 
 
 def test_container_bundle_initialization_isolated(
@@ -260,10 +259,20 @@ def test_production_container_mcp_protocol():
     if not available:
         pytest.skip(f"Container runtime {runtime} not available")
 
-    # Skip in CI due to container build requirements
-    # The publish workflow validates container functionality
-    if os.environ.get("CI") == "true":
-        pytest.skip("Container runtime tests are skipped in CI - run locally with 'pytest -m slow'")
+    # Container tests now run in CI to catch deployment issues
+
+    # Check if the required container image exists
+    try:
+        result = subprocess.run(
+            [runtime, "image", "exists", "troubleshoot-mcp-server:latest"],
+            capture_output=True,
+        )
+        if result.returncode != 0:
+            pytest.skip(
+                "Container image troubleshoot-mcp-server:latest not available - build first with: MELANGE_TEST_BUILD=true ./scripts/build.sh"
+            )
+    except FileNotFoundError:
+        pytest.skip(f"Container runtime {runtime} not found")
 
     container_name = f"mcp-protocol-test-{uuid.uuid4().hex[:8]}"
 

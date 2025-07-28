@@ -103,9 +103,9 @@ class TestAPIServerLifecycle:
             result = await kubectl_executor.execute("get namespaces", json_output=True)
 
             # Verify we got a successful response
-            assert (
-                result.exit_code == 0
-            ), f"kubectl command failed with exit code {result.exit_code}: {result.stderr}"
+            assert result.exit_code == 0, (
+                f"kubectl command failed with exit code {result.exit_code}: {result.stderr}"
+            )
 
             # Verify we got valid JSON output
             assert result.is_json, "Expected JSON output from kubectl get namespaces"

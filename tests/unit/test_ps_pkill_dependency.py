@@ -264,5 +264,5 @@ def test_psutil_availability():
         pytest.fail("❌ psutil is not available! Add psutil to pyproject.toml dependencies.")
     except Exception as e:
         pytest.fail(
-            f"❌ psutil functionality test failed: {str(e)}\n" f"Error type: {type(e).__name__}"
+            f"❌ psutil functionality test failed: {str(e)}\nError type: {type(e).__name__}"
         )

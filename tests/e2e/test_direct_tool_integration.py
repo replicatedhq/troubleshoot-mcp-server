@@ -127,13 +127,13 @@ class TestDirectToolIntegration:
         if bundle_name not in bundles_text and "No support bundles found" in bundles_text:
             # This is acceptable - bundle might need to be in a specific format
             print("Bundle not automatically detected, this is expected for test bundles")
-            assert (
-                "support bundles" in bundles_text.lower()
-            ), f"Should mention bundles: {bundles_text}"
+            assert "support bundles" in bundles_text.lower(), (
+                f"Should mention bundles: {bundles_text}"
+            )
         else:
-            assert (
-                bundle_name in bundles_text
-            ), f"Bundle {bundle_name} should appear in list: {bundles_text}"
+            assert bundle_name in bundles_text, (
+                f"Bundle {bundle_name} should appear in list: {bundles_text}"
+            )
 
     @pytest.mark.asyncio
     async def test_file_operations_direct(self, test_bundle_copy):
@@ -170,9 +170,9 @@ class TestDirectToolIntegration:
                             assert len(read_content) > 0, f"Should be able to read file {file_path}"
         except json.JSONDecodeError:
             # If not JSON, just verify we got some text output
-            assert (
-                "file" in files_text.lower() or "directory" in files_text.lower()
-            ), f"File listing should mention files or directories: {files_text}"
+            assert "file" in files_text.lower() or "directory" in files_text.lower(), (
+                f"File listing should mention files or directories: {files_text}"
+            )
 
     @pytest.mark.asyncio
     async def test_grep_functionality_direct(self, test_bundle_copy):

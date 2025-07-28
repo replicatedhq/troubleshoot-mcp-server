@@ -1053,7 +1053,6 @@ class BundleManager:
 
                             # Try to copy to expected location
                             try:
-
                                 safe_copy_file(alt_path, kubeconfig_path)
                                 logger.info(
                                     f"Copied kubeconfig from {alt_path} to {kubeconfig_path}"
@@ -1102,7 +1101,6 @@ class BundleManager:
                         # Make sure we have a kubeconfig at expected location
                         if found_kubeconfig_path != kubeconfig_path:
                             try:
-
                                 logger.info(
                                     f"Copied kubeconfig from {found_kubeconfig_path} to {kubeconfig_path}"
                                 )
@@ -1120,7 +1118,7 @@ class BundleManager:
                         if time_since_kubeconfig > (timeout * api_server_wait_percentage):
                             logger.warning(
                                 f"API server not responding after {time_since_kubeconfig:.1f}s "
-                                f"({api_server_wait_percentage*100:.0f}% of timeout). Proceeding anyway."
+                                f"({api_server_wait_percentage * 100:.0f}% of timeout). Proceeding anyway."
                             )
 
                         # Make sure we have a kubeconfig at expected location
@@ -1329,7 +1327,6 @@ class BundleManager:
                                         and proc.info["cmdline"]
                                         and any(bundle_path in arg for arg in proc.info["cmdline"])
                                     ):
-
                                         pid = proc.info["pid"]
                                         logger.debug(
                                             f"Found orphaned sbctl process with PID {pid}, attempting to terminate"
@@ -1376,7 +1373,6 @@ class BundleManager:
                                     and proc.info["cmdline"]
                                     and any("serve" in arg for arg in proc.info["cmdline"])
                                 ):
-
                                     try:
                                         proc.terminate()
                                         terminated_count += 1

@@ -125,9 +125,9 @@ def test_sbctl_help_behavior(test_support_bundle):
 
         # Verify serve help contains expected options
         serve_help_output = serve_help_result.stdout
-        assert (
-            "--support-bundle-location" in serve_help_output
-        ), "Serve command should document bundle location option"
+        assert "--support-bundle-location" in serve_help_output, (
+            "Serve command should document bundle location option"
+        )
 
 
 @pytest.mark.asyncio
@@ -165,9 +165,9 @@ async def test_bundle_lifecycle(bundle_manager_fixture):
 
     # Test that re-initialization without force returns the same bundle
     second_result = await manager.initialize_bundle(str(real_bundle_path), force=False)
-    assert (
-        second_result.id == result.id
-    ), "Re-initialization without force should return the same bundle"
+    assert second_result.id == result.id, (
+        "Re-initialization without force should return the same bundle"
+    )
 
     # Test that force re-initialization creates a new bundle
     force_result = await manager.initialize_bundle(str(real_bundle_path), force=True)
@@ -219,9 +219,9 @@ async def test_bundle_initialization_workflow(bundle_manager_fixture, test_asser
 
             # TEST 3: Recursive listing behavior
             recursive_list = await explorer.list_files(first_dir, True)
-            assert (
-                recursive_list.total_files + recursive_list.total_dirs > 0
-            ), "Recursive listing should find files/dirs"
+            assert recursive_list.total_files + recursive_list.total_dirs > 0, (
+                "Recursive listing should find files/dirs"
+            )
 
             # TEST 4: File reading behavior
             # Find a file to read (we don't care which, just that we can read one)
@@ -238,9 +238,9 @@ async def test_bundle_initialization_workflow(bundle_manager_fixture, test_asser
                 # Check metadata (behavior we depend on)
                 assert file_content.path == first_file, "File content should have correct path"
                 # Note: We're checking for path existence, not name which might not be in all versions
-                assert hasattr(
-                    file_content, "content"
-                ), "File content should have content attribute"
+                assert hasattr(file_content, "content"), (
+                    "File content should have content attribute"
+                )
 
 
 @pytest.mark.asyncio
@@ -274,9 +274,9 @@ async def test_bundle_manager_performance(bundle_manager_fixture):
     # Verify expected initialization behavior
     assert result.initialized, "Bundle should be marked as initialized"
     assert result.kubeconfig_path.exists(), "Initialization should create a kubeconfig file"
-    assert (
-        duration < 45.0
-    ), f"Initialization should complete in reasonable time (took {duration:.2f}s)"
+    assert duration < 45.0, (
+        f"Initialization should complete in reasonable time (took {duration:.2f}s)"
+    )
 
     # BEHAVIOR TEST 2: Verify kubeconfig has valid structure
     with open(result.kubeconfig_path, "r") as f:

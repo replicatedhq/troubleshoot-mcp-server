@@ -116,7 +116,7 @@ class ContainerMCPClient:
                     pass
 
             raise RuntimeError(
-                f"Timeout waiting for response from container. " f"Stderr: {stderr_data.decode()}"
+                f"Timeout waiting for response from container. Stderr: {stderr_data.decode()}"
             )
 
     async def call_tool(self, tool_name: str, arguments: dict) -> dict:

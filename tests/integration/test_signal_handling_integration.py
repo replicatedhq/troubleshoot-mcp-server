@@ -316,7 +316,9 @@ if __name__ == "__main__":
             )
 
             # Should not crash with Python runtime error
-            assert "Fatal Python error" not in stderr, f"Race condition detected on iteration {i+1}"
+            assert "Fatal Python error" not in stderr, (
+                f"Race condition detected on iteration {i + 1}"
+            )
             assert "_enter_buffered_busy" not in stderr
 
     def test_signal_with_resource_cleanup(self):

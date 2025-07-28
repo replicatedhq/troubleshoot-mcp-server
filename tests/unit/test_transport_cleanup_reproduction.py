@@ -707,7 +707,9 @@ async def test_demonstrate_transport_cleanup_fix_success():
         # Pattern 2: Operations with timeouts using subprocess_exec_with_cleanup
         try:
             returncode, stdout, stderr = await subprocess_exec_with_cleanup(
-                "sleep", "0.1", timeout=1.0  # Should complete successfully
+                "sleep",
+                "0.1",
+                timeout=1.0,  # Should complete successfully
             )
             assert returncode == 0, "sleep operation should succeed"
             processes_created += 1
@@ -719,7 +721,9 @@ async def test_demonstrate_transport_cleanup_fix_success():
         try:
             # This should timeout and be cleaned up properly
             returncode, stdout, stderr = await subprocess_exec_with_cleanup(
-                "sleep", "10", timeout=0.1  # Very short timeout
+                "sleep",
+                "10",
+                timeout=0.1,  # Very short timeout
             )
             # Should not reach here due to timeout
         except asyncio.TimeoutError:

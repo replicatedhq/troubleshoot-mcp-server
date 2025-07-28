@@ -28,17 +28,15 @@ jobs:
       
       - name: Setup environment
         run: |
-          # Create virtual environment
-          uv venv -p python3.13 .venv
-          
-          # Install development dependencies
-          uv pip install -e ".[dev]"
+          # UV will automatically create and manage the virtual environment
+          # Just sync the project dependencies
+          uv sync --extra dev
       
       - name: Run linting
         run: uv run ruff check .
       
       - name: Run formatting check
-        run: uv run black --check .
+        run: uv run ruff format --check .
       
       - name: Run type checking
         run: uv run mypy src
@@ -65,11 +63,9 @@ jobs:
       
       - name: Setup environment
         run: |
-          # Create virtual environment
-          uv venv -p python3.13 .venv
-          
-          # Install development dependencies
-          uv pip install -e ".[dev]"
+          # UV will automatically create and manage the virtual environment
+          # Just sync the project dependencies
+          uv sync --extra dev
       
       - name: Run unit tests with coverage
         run: uv run pytest tests/unit/ --cov=src --cov-report=xml:coverage-unit.xml --cov-report=term -v
@@ -102,11 +98,9 @@ jobs:
       
       - name: Setup environment
         run: |
-          # Create virtual environment
-          uv venv -p python3.13 .venv
-          
-          # Install development dependencies
-          uv pip install -e ".[dev]"
+          # UV will automatically create and manage the virtual environment
+          # Just sync the project dependencies
+          uv sync --extra dev
       
       - name: Install sbctl
         run: |
@@ -143,11 +137,9 @@ jobs:
       
       - name: Setup environment
         run: |
-          # Create virtual environment
-          uv venv -p python3.13 .venv
-          
-          # Install development dependencies
-          uv pip install -e ".[dev]"
+          # UV will automatically create and manage the virtual environment
+          # Just sync the project dependencies
+          uv sync --extra dev
         
       - name: Install sbctl
         run: |
@@ -192,11 +184,9 @@ jobs:
       
       - name: Setup environment
         run: |
-          # Create virtual environment
-          uv venv -p python3.13 .venv
-          
-          # Install development dependencies
-          uv pip install -e ".[dev]"
+          # UV will automatically create and manage the virtual environment
+          # Just sync the project dependencies
+          uv sync --extra dev
       
       - name: Download unit test coverage
         uses: actions/download-artifact@v4
@@ -269,11 +259,9 @@ jobs:
       
       - name: Setup environment
         run: |
-          # Create virtual environment
-          uv venv -p python3.13 .venv
-          
-          # Install development dependencies
-          uv pip install -e ".[dev]"
+          # UV will automatically create and manage the virtual environment
+          # Just sync the project dependencies
+          uv sync --extra dev
       
       - name: Install sbctl
         run: |

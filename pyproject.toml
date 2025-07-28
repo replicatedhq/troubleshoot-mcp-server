@@ -31,7 +31,6 @@ dev = [
     "pytest-asyncio",
     "pytest-timeout",
     "pytest-cov",
-    "black",
     "ruff",
     "mypy",
     "types-PyYAML",  # Type stubs for PyYAML
@@ -82,9 +81,6 @@ exclude = [
     "tests/fixtures/mock_kubectl.py"
 ]
 
-[tool.black]
-line-length = 100
-target-version = ["py313"]
 
 [tool.mypy]
 python_version = "3.13"

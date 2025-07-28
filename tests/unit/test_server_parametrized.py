@@ -785,7 +785,6 @@ async def test_cleanup_resources(test_assertions: Any, tmp_path: Path) -> None:
         patch("mcp_server_troubleshoot.server.globals") as mock_globals,
         patch.object(bundle_manager, "cleanup", new_callable=AsyncMock) as mock_cleanup,
     ):
-
         # Reset shutdown flag
         import mcp_server_troubleshoot.server
 
@@ -827,7 +826,6 @@ async def test_cleanup_resources(test_assertions: Any, tmp_path: Path) -> None:
         patch("mcp_server_troubleshoot.server.globals") as mock_globals,
         patch.object(bundle_manager, "cleanup", new_callable=AsyncMock) as mock_cleanup,
     ):
-
         # Reset shutdown flag
         mcp_server_troubleshoot.server._is_shutting_down = False
 
@@ -893,7 +891,6 @@ async def test_shutdown_function() -> None:
         patch("asyncio.create_task") as mock_create_task,
         patch("mcp_server_troubleshoot.server.cleanup_resources"),
     ):
-
         mock_loop = Mock()
         mock_get_loop.return_value = mock_loop
         mock_loop.is_closed.return_value = False
@@ -911,7 +908,6 @@ async def test_shutdown_function() -> None:
         patch("asyncio.set_event_loop") as mock_set_loop,
         patch("mcp_server_troubleshoot.server.cleanup_resources"),
     ):
-
         mock_loop = Mock()
         mock_new_loop.return_value = mock_loop
 

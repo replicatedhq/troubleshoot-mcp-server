@@ -103,7 +103,8 @@ async def test_initialize_bundle_tool():
                 if process.stdout:
                     print("Waiting for tool response (this should complete in ~6 seconds)...")
                     response_bytes = await asyncio.wait_for(
-                        process.stdout.readline(), timeout=30.0  # Generous timeout
+                        process.stdout.readline(),
+                        timeout=30.0,  # Generous timeout
                     )
                     response_line = response_bytes.decode().strip()
                     print(f"✅ Tool response: {response_line}")

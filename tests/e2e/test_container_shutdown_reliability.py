@@ -210,7 +210,10 @@ class TestContainerShutdownReliability:
 
         # Test with very quick signal after startup
         return_code, stdout, stderr = run_server_as_subprocess(
-            args=[], env=env, signal_to_send=signal.SIGTERM, signal_delay=0.1  # Very quick signal
+            args=[],
+            env=env,
+            signal_to_send=signal.SIGTERM,
+            signal_delay=0.1,  # Very quick signal
         )
 
         # Should handle even rapid shutdown without crashes
