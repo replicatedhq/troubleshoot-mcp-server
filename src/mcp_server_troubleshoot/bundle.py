@@ -21,6 +21,7 @@ from typing import List, Optional, Tuple, Union
 from urllib.parse import urlparse
 
 import aiohttp
+import psutil
 import httpx  # Added for Replicated API calls
 from pydantic import BaseModel, Field, field_validator
 
@@ -1316,67 +1317,91 @@ class BundleManager:
                         bundle_path = str(self.active_bundle.source)
 
                     if bundle_path:
-                        # Use pkill to find and kill sbctl processes using our bundle
+                        # Use psutil to find and kill sbctl processes using our bundle
                         try:
-                            import subprocess
+                            # Find processes using psutil instead of ps -ef subprocess call
+                            for proc in psutil.process_iter(["pid", "name", "cmdline"]):
+                                try:
+                                    # Check if this is an sbctl process using our bundle
+                                    if (
+                                        proc.info["name"]
+                                        and "sbctl" in proc.info["name"]
+                                        and proc.info["cmdline"]
+                                        and any(bundle_path in arg for arg in proc.info["cmdline"])
+                                    ):
 
-                            # First try to get a list of matching processes
-                            ps_cmd = ["ps", "-ef"]
-                            ps_result = subprocess.run(ps_cmd, capture_output=True, text=True)
+                                        pid = proc.info["pid"]
+                                        logger.debug(
+                                            f"Found orphaned sbctl process with PID {pid}, attempting to terminate"
+                                        )
+                                        try:
+                                            os.kill(pid, signal.SIGTERM)
+                                            logger.debug(f"Sent SIGTERM to process {pid}")
+                                            await asyncio.sleep(0.5)
 
-                            if ps_result.returncode == 0:
-                                for line in ps_result.stdout.splitlines():
-                                    if "sbctl" in line and bundle_path in line:
-                                        # Extract PID (second column in ps output)
-                                        parts = line.split()
-                                        if len(parts) > 1:
+                                            # Check if terminated
                                             try:
-                                                pid = int(parts[1])
+                                                os.kill(pid, 0)
+                                                # Process still exists, use SIGKILL
                                                 logger.debug(
-                                                    f"Found orphaned sbctl process with PID {pid}, attempting to terminate"
+                                                    f"Process {pid} still exists, sending SIGKILL"
                                                 )
-                                                try:
-                                                    os.kill(pid, signal.SIGTERM)
-                                                    logger.debug(f"Sent SIGTERM to process {pid}")
-                                                    await asyncio.sleep(0.5)
-
-                                                    # Check if terminated
-                                                    try:
-                                                        os.kill(pid, 0)
-                                                        # Process still exists, use SIGKILL
-                                                        logger.debug(
-                                                            f"Process {pid} still exists, sending SIGKILL"
-                                                        )
-                                                        os.kill(pid, signal.SIGKILL)
-                                                    except ProcessLookupError:
-                                                        logger.debug(
-                                                            f"Process {pid} terminated successfully"
-                                                        )
-                                                except (ProcessLookupError, PermissionError) as e:
-                                                    logger.debug(
-                                                        f"Error terminating process {pid}: {e}"
-                                                    )
-                                            except ValueError:
-                                                pass
+                                                os.kill(pid, signal.SIGKILL)
+                                            except ProcessLookupError:
+                                                logger.debug(
+                                                    f"Process {pid} terminated successfully"
+                                                )
+                                        except (ProcessLookupError, PermissionError) as e:
+                                            logger.debug(f"Error terminating process {pid}: {e}")
+                                except (
+                                    psutil.NoSuchProcess,
+                                    psutil.AccessDenied,
+                                    psutil.ZombieProcess,
+                                ):
+                                    # Process disappeared or access denied - skip it
+                                    continue
                         except Exception as e:
                             logger.warning(f"Error cleaning up orphaned sbctl processes: {e}")
 
                     # As a fallback, try to clean up any sbctl processes related to serve
                     try:
-                        import subprocess
+                        # Use psutil to find and terminate sbctl serve processes
+                        terminated_count = 0
+                        for proc in psutil.process_iter(["pid", "name", "cmdline"]):
+                            try:
+                                # Check if this is an sbctl serve process
+                                if (
+                                    proc.info["name"]
+                                    and "sbctl" in proc.info["name"]
+                                    and proc.info["cmdline"]
+                                    and any("serve" in arg for arg in proc.info["cmdline"])
+                                ):
 
-                        kill_cmd = ["pkill", "-f", "sbctl serve"]
-                        result = subprocess.run(kill_cmd, capture_output=True, text=True)
-                        if result.returncode == 0:
-                            logger.debug("Successfully terminated sbctl serve processes with pkill")
+                                    try:
+                                        proc.terminate()
+                                        terminated_count += 1
+                                        logger.debug(
+                                            f"Terminated sbctl serve process with PID {proc.info['pid']}"
+                                        )
+                                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                                        # Process already gone or access denied - skip it
+                                        continue
+                            except (
+                                psutil.NoSuchProcess,
+                                psutil.AccessDenied,
+                                psutil.ZombieProcess,
+                            ):
+                                # Process disappeared or access denied - skip it
+                                continue
+
+                        if terminated_count > 0:
+                            logger.debug(
+                                f"Successfully terminated {terminated_count} sbctl serve processes"
+                            )
                         else:
-                            # Exit code 1 just means no processes matched
-                            if result.returncode != 1:
-                                logger.warning(
-                                    f"pkill returned non-zero exit code: {result.returncode}"
-                                )
+                            logger.debug("No sbctl serve processes found to terminate")
                     except Exception as e:
-                        logger.warning(f"Error using pkill to terminate sbctl processes: {e}")
+                        logger.warning(f"Error using psutil to terminate sbctl processes: {e}")
 
                 except Exception as e:
                     logger.warning(f"Error during extended cleanup: {e}")
@@ -2110,31 +2135,42 @@ class BundleManager:
         # 2. Clean up any orphaned sbctl processes that might still be running
         if CLEANUP_ORPHANED:
             try:
-                # Use pkill as a final safety measure to ensure no sbctl processes remain
-                import subprocess
-
+                # Use psutil as a final safety measure to ensure no sbctl processes remain
                 try:
                     logger.info("Checking for any remaining sbctl processes")
-                    ps_cmd = ["ps", "-ef"]
-                    ps_result = subprocess.run(ps_cmd, capture_output=True, text=True)
+                    # Find sbctl processes using psutil instead of ps -ef subprocess call
+                    sbctl_processes = []
+                    for proc in psutil.process_iter(["pid", "name", "cmdline"]):
+                        try:
+                            # Check if this is an sbctl process
+                            if (proc.info["name"] and "sbctl" in proc.info["name"]) or (
+                                proc.info["cmdline"]
+                                and any("sbctl" in arg for arg in proc.info["cmdline"])
+                            ):
+                                sbctl_processes.append(proc)
+                        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                            # Process disappeared or access denied - skip it
+                            continue
 
-                    if ps_result.returncode == 0:
-                        sbctl_processes = [
-                            line for line in ps_result.stdout.splitlines() if "sbctl" in line
-                        ]
-                        if sbctl_processes:
-                            logger.warning(
-                                f"Found {len(sbctl_processes)} sbctl processes still running during shutdown"
-                            )
-                            # Try to terminate them
-                            kill_cmd = ["pkill", "-f", "sbctl"]
-                            kill_result = subprocess.run(kill_cmd, capture_output=True, text=True)
-                            if kill_result.returncode not in (0, 1):  # 1 means no processes found
-                                logger.warning(
-                                    f"pkill returned non-zero exit code: {kill_result.returncode}"
-                                )
-                        else:
-                            logger.info("No sbctl processes found during shutdown")
+                    if sbctl_processes:
+                        logger.warning(
+                            f"Found {len(sbctl_processes)} sbctl processes still running during shutdown"
+                        )
+                        # Try to terminate them using psutil instead of pkill subprocess call
+                        terminated_count = 0
+                        for proc in sbctl_processes:
+                            try:
+                                proc.terminate()
+                                terminated_count += 1
+                                logger.debug(f"Terminated sbctl process with PID {proc.pid}")
+                            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                                # Process already gone or access denied - skip it
+                                continue
+                        logger.info(
+                            f"Terminated {terminated_count} sbctl processes during shutdown"
+                        )
+                    else:
+                        logger.info("No sbctl processes found during shutdown")
                 except Exception as process_err:
                     logger.warning(
                         f"Error checking for orphaned processes during shutdown: {process_err}"

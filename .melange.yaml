@@ -20,6 +20,7 @@ environment:
       - python3
       - python3-dev
       - py3-pip
+      - py3-psutil  # Required for process management (replaces ps/pkill)
       - build-base
 
 pipeline:
