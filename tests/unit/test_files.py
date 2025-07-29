@@ -164,7 +164,7 @@ async def test_file_explorer_list_files():
         explorer = FileExplorer(mock_bundle_manager)
 
         # Test 1: List root directory non-recursively
-        result = await explorer.list_files("", False)
+        result = await explorer.list_files(path="", recursive=False)
 
         # Verify behavior expectations
         assert isinstance(result, FileListResult), "Result should be a FileListResult"
@@ -175,7 +175,7 @@ async def test_file_explorer_list_files():
         assert result.total_files >= 0, "Should have valid file count"
 
         # Test 2: List subdirectory recursively
-        result = await explorer.list_files("cluster-resources", True)
+        result = await explorer.list_files(path="cluster-resources", recursive=True)
 
         # Verify behavior expectations for recursive listing
         assert result.path == "cluster-resources", "Path should match requested directory"
@@ -222,17 +222,19 @@ async def test_file_explorer_list_files_errors():
 
         # Test 1: Listing a non-existent path raises an error
         with pytest.raises(PathNotFoundError):
-            await explorer.list_files("nonexistent_path", False)
+            await explorer.list_files(path="nonexistent_path", recursive=False)
 
         # Test 2: Listing a file (should raise an error)
         # We know from the real structure that cluster-resources/pods/kube-system.json exists
         with pytest.raises(Exception):
-            await explorer.list_files("cluster-resources/pods/kube-system.json", False)
+            await explorer.list_files(
+                path="cluster-resources/pods/kube-system.json", recursive=False
+            )
 
         # Test 3: Without an active bundle should raise an error
         mock_bundle_manager.get_active_bundle.return_value = None
         with pytest.raises(Exception):
-            await explorer.list_files("", False)
+            await explorer.list_files(path="", recursive=False)
 
 
 @pytest.mark.asyncio
@@ -264,7 +266,7 @@ async def test_file_explorer_read_file():
         explorer = FileExplorer(mock_bundle_manager)
 
         # Test 1: Reading a text file (use real JSON file from bundle structure)
-        result = await explorer.read_file("cluster-resources/pods/kube-system.json")
+        result = await explorer.read_file(path="cluster-resources/pods/kube-system.json")
 
         # Verify behavior expectations
         assert isinstance(result, FileContentResult), "Result should be a FileContentResult"
@@ -276,7 +278,9 @@ async def test_file_explorer_read_file():
         assert result.total_lines > 0, "Line count should be available"
 
         # Test 2: Reading a line range from the same file
-        result = await explorer.read_file("cluster-resources/pods/kube-system.json", 1, 3)
+        result = await explorer.read_file(
+            path="cluster-resources/pods/kube-system.json", start_line=1, end_line=3
+        )
 
         # Verify behavior expectations for line ranges
         assert result.start_line == 1, "Start line should match requested value"
@@ -284,7 +288,7 @@ async def test_file_explorer_read_file():
         assert len(result.content.split("\n")) <= 4, "Should have limited lines based on range"
 
         # Test 3: Reading binary file (from the with_binaries structure)
-        result = await explorer.read_file("binaries/fake_binary")
+        result = await explorer.read_file(path="binaries/fake_binary")
 
         # Verify behavior expectations for binary files
         assert result.path == "binaries/fake_binary", "Path should be preserved in result"
@@ -321,16 +325,16 @@ async def test_file_explorer_read_file_errors():
 
         # Test 1: Reading a non-existent file raises PathNotFoundError
         with pytest.raises(PathNotFoundError):
-            await explorer.read_file("nonexistent.txt")
+            await explorer.read_file(path="nonexistent.txt")
 
         # Test 2: Reading a directory raises ReadFileError
         with pytest.raises(ReadFileError):
-            await explorer.read_file("cluster-resources")
+            await explorer.read_file(path="cluster-resources")
 
         # Test 3: Without an active bundle should raise an error
         mock_bundle_manager.get_active_bundle.return_value = None
         with pytest.raises(Exception):
-            await explorer.read_file("cluster-resources/pods/kube-system.json")
+            await explorer.read_file(path="cluster-resources/pods/kube-system.json")
 
 
 @pytest.mark.asyncio
@@ -373,7 +377,7 @@ async def test_file_explorer_grep_files():
         explorer = FileExplorer(mock_bundle_manager)
 
         # Test 1: Global search for common pattern
-        result = await explorer.grep_files("test", "", True)
+        result = await explorer.grep_files(pattern="test", path="", recursive=True)
 
         # Verify behavior expectations
         assert isinstance(result, GrepResult), "Result should be a GrepResult"
@@ -392,7 +396,9 @@ async def test_file_explorer_grep_files():
             assert hasattr(match, "path"), "Match should have path"
 
         # Test 2: Directory-restricted search with glob pattern
-        result = await explorer.grep_files("test", "test_files", True, "*.txt")
+        result = await explorer.grep_files(
+            pattern="test", path="test_files", recursive=True, glob_pattern="*.txt"
+        )
 
         # Verify behavior expectations
         assert result.pattern == "test", "Pattern should be preserved"
@@ -402,10 +408,14 @@ async def test_file_explorer_grep_files():
 
         # Test 3: Case sensitivity behavior
         # First test with case sensitive search
-        case_sensitive = await explorer.grep_files("UPPERCASE", "", True, None, True)
+        case_sensitive = await explorer.grep_files(
+            pattern="UPPERCASE", path="", recursive=True, glob_pattern=None, case_sensitive=True
+        )
 
         # Now test with case insensitive search
-        case_insensitive = await explorer.grep_files("uppercase", "", True, None, False)
+        case_insensitive = await explorer.grep_files(
+            pattern="uppercase", path="", recursive=True, glob_pattern=None, case_sensitive=False
+        )
 
         # Verify behavior expectations for case sensitivity
         assert case_sensitive.total_matches >= 1, "Should find exact case matches"
@@ -457,7 +467,9 @@ async def test_file_explorer_grep_files_with_kubeconfig():
         explorer = FileExplorer(mock_bundle_manager)
 
         # Test searching for "specific" pattern
-        result = await explorer.grep_files("specific", "", True, None, False)
+        result = await explorer.grep_files(
+            pattern="specific", path="", recursive=True, glob_pattern=None, case_sensitive=False
+        )
 
         # Verify behavior expectations
         assert isinstance(result, GrepResult), "Result should be a GrepResult"
@@ -502,12 +514,12 @@ async def test_file_explorer_grep_files_errors():
 
         # Test 1: Searching a non-existent path raises an error
         with pytest.raises(PathNotFoundError):
-            await explorer.grep_files("test", "nonexistent_path", True)
+            await explorer.grep_files(pattern="test", path="nonexistent_path", recursive=True)
 
         # Test 2: Without an active bundle should raise an error
         mock_bundle_manager.get_active_bundle.return_value = None
         with pytest.raises(Exception):
-            await explorer.grep_files("test", "", True)
+            await explorer.grep_files(pattern="test", path="", recursive=True)
 
 
 def test_file_explorer_is_binary():

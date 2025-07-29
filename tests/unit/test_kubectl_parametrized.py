@@ -153,7 +153,9 @@ async def test_kubectl_command_execution_parameters(command, expected_args, add_
     # Mock the create_subprocess_exec function
     with patch("asyncio.create_subprocess_exec", return_value=mock_process) as mock_exec:
         # Execute the command
-        result = await executor._run_kubectl_command(command, bundle, 30, True)
+        result = await executor._run_kubectl_command(
+            command=command, bundle=bundle, timeout=30, json_output=True
+        )
 
         # Verify the command was constructed correctly
         mock_exec.assert_awaited_once()
@@ -240,14 +242,18 @@ async def test_kubectl_error_handling(
         if should_raise:
             # Should raise KubectlError
             with pytest.raises(KubectlError) as excinfo:
-                await executor._run_kubectl_command("get pods", bundle, 30, True)
+                await executor._run_kubectl_command(
+                    command="get pods", bundle=bundle, timeout=30, json_output=True
+                )
 
             # Verify error details
             assert excinfo.value.exit_code == expected_exit_code
             assert stderr_content in excinfo.value.stderr
         else:
             # Should succeed
-            result = await executor._run_kubectl_command("get pods", bundle, 30, True)
+            result = await executor._run_kubectl_command(
+                command="get pods", bundle=bundle, timeout=30, json_output=True
+            )
 
             # Verify result details
             assert result.exit_code == expected_exit_code
@@ -298,7 +304,9 @@ async def test_kubectl_timeout_behavior(test_assertions, test_factory):
         side_effect=mock_subprocess_timeout,
     ):
         with pytest.raises(KubectlError) as excinfo:
-            await executor._run_kubectl_command("get pods", bundle, 0.1, True)
+            await executor._run_kubectl_command(
+                command="get pods", bundle=bundle, timeout=0.1, json_output=True
+            )
 
         # Verify error details
         assert "timed out" in str(excinfo.value).lower()

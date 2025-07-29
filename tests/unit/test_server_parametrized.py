@@ -159,13 +159,10 @@ async def test_initialize_bundle_tool_parametrized(
         mock_diag.return_value = {"api_server_available": api_available}
         mock_get_manager.return_value = bundle_manager
 
-        # Create InitializeBundleArgs instance
-        from mcp_server_troubleshoot.bundle import InitializeBundleArgs
-
-        args = InitializeBundleArgs(source=str(temp_source_file), force=force, verbosity="verbose")
-
-        # Call the tool function
-        response = await initialize_bundle(args)
+        # Call the tool function with direct parameters
+        response = await initialize_bundle(
+            source=str(temp_source_file), force=force, verbosity="verbose"
+        )
 
         # Verify method calls on real instance
         mock_sbctl.assert_awaited_once()
@@ -294,18 +291,10 @@ async def test_kubectl_tool_parametrized(
             # For success cases, return the mock result
             mock_execute.return_value = mock_result
 
-        # Create KubectlCommandArgs instance
-        from mcp_server_troubleshoot.kubectl import KubectlCommandArgs
-
-        args = KubectlCommandArgs(
-            command=command,
-            timeout=timeout,
-            json_output=json_output,
-            verbosity="verbose",
+        # Call the tool function with direct parameters
+        response = await kubectl(
+            command=command, timeout=timeout, json_output=json_output, verbosity="verbose"
         )
-
-        # Call the tool function
-        response = await kubectl(args)
 
         # Verify API check called on real instance
         mock_api.assert_awaited_once()
@@ -510,42 +499,42 @@ async def test_file_operations_parametrized(
 
         # Execute the appropriate file operation with real components
         if file_operation == "list_files":
-            from mcp_server_troubleshoot.files import ListFilesArgs
-
             # Adjust path to real directory structure
-            args_copy = args.copy()
-            if args_copy["path"] == "dir1":
-                args_copy["path"] = "test_data/dir1"
-            args_copy["verbosity"] = "minimal"
-            list_operation_args = ListFilesArgs(**args_copy)
-            response = await list_files(list_operation_args)
+            path = args["path"]
+            if path == "dir1":
+                path = "test_data/dir1"
+            response = await list_files(path=path, recursive=args["recursive"], verbosity="minimal")
 
         elif file_operation == "read_file":
-            from mcp_server_troubleshoot.files import ReadFileArgs
-
             # Adjust path to real file structure
-            args_copy = args.copy()
-            if args_copy["path"] == "dir1/file1.txt":
-                args_copy["path"] = "test_data/dir1/file1.txt"
-            args_copy["verbosity"] = "minimal"
-            read_operation_args = ReadFileArgs(**args_copy)
-            response = await read_file(read_operation_args)
+            path = args["path"]
+            if path == "dir1/file1.txt":
+                path = "test_data/dir1/file1.txt"
+            response = await read_file(
+                path=path,
+                start_line=args["start_line"],
+                end_line=args["end_line"],
+                verbosity="minimal",
+            )
 
         elif file_operation == "grep_files":
-            from mcp_server_troubleshoot.files import GrepFilesArgs
-
             # Adjust path to real directory structure
-            args_copy = args.copy()
-            if args_copy["path"] == "dir1":
-                args_copy["path"] = "test_data/dir1"
-            elif args_copy["path"] == ".":
-                args_copy["path"] = "test_data"
-            # Add missing required args
-            args_copy.setdefault("max_results_per_file", 50)
-            args_copy.setdefault("max_files", 10)
-            args_copy["verbosity"] = "minimal"
-            grep_operation_args = GrepFilesArgs(**args_copy)
-            response = await grep_files(grep_operation_args)
+            path = args["path"]
+            if path == "dir1":
+                path = "test_data/dir1"
+            elif path == ".":
+                path = "test_data"
+            response = await grep_files(
+                pattern=args["pattern"],
+                path=path,
+                recursive=args["recursive"],
+                glob_pattern=args["glob_pattern"],
+                case_sensitive=args["case_sensitive"],
+                max_results=args["max_results"],
+                max_results_per_file=args.get("max_results_per_file", 50),
+                max_files=args.get("max_files", 10),
+                verbosity="minimal",
+            )
 
         # Use the test assertion helper to verify response
         test_assertions.assert_api_response_valid(response, "text", expected_strings)
@@ -636,26 +625,18 @@ async def test_file_operations_error_handling(
         mock_get_explorer.return_value = file_explorer
 
         # Test all three file operations with the same error
-        from mcp_server_troubleshoot.files import (
-            ListFilesArgs,
-            ReadFileArgs,
-            GrepFilesArgs,
-        )
-
         # 1. Test list_files
-        list_args = ListFilesArgs(path="test/path", recursive=False, verbosity="verbose")
-        list_response = await list_files(list_args)
+        list_response = await list_files(path="test/path", recursive=False, verbosity="verbose")
         test_assertions.assert_api_response_valid(list_response, "text", expected_strings)
 
         # 2. Test read_file
-        read_args = ReadFileArgs(
+        read_response = await read_file(
             path="test/file.txt", start_line=0, end_line=None, verbosity="verbose"
         )
-        read_response = await read_file(read_args)
         test_assertions.assert_api_response_valid(read_response, "text", expected_strings)
 
         # 3. Test grep_files
-        grep_args = GrepFilesArgs(
+        grep_response = await grep_files(
             pattern="test",
             path="test/path",
             recursive=True,
@@ -666,7 +647,6 @@ async def test_file_operations_error_handling(
             max_files=10,
             verbosity="verbose",
         )
-        grep_response = await grep_files(grep_args)
         test_assertions.assert_api_response_valid(grep_response, "text", expected_strings)
 
     # No manual cleanup needed - tmp_path handles it automatically
@@ -773,13 +753,10 @@ async def test_list_available_bundles_parametrized(
         mock_list.return_value = bundles
         mock_get_manager.return_value = bundle_manager
 
-        # Create ListAvailableBundlesArgs instance
-        from mcp_server_troubleshoot.bundle import ListAvailableBundlesArgs
-
-        args = ListAvailableBundlesArgs(include_invalid=include_invalid, verbosity="verbose")
-
-        # Call the tool function
-        response = await list_available_bundles(args)
+        # Call the tool function with direct parameters
+        response = await list_available_bundles(
+            include_invalid=include_invalid, verbosity="verbose"
+        )
 
         # Verify method call on real instance
         mock_list.assert_awaited_once_with(include_invalid)

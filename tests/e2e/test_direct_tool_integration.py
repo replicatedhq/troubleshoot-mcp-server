@@ -20,16 +20,6 @@ from src.mcp_server_troubleshoot.server import (
     grep_files,
     kubectl,
 )
-from src.mcp_server_troubleshoot.bundle import (
-    InitializeBundleArgs,
-    ListAvailableBundlesArgs,
-)
-from src.mcp_server_troubleshoot.files import (
-    ListFilesArgs,
-    ReadFileArgs,
-    GrepFilesArgs,
-)
-from src.mcp_server_troubleshoot.kubectl import KubectlCommandArgs
 from tests.integration.mcp_test_utils import get_test_bundle_path
 
 
@@ -81,10 +71,10 @@ class TestDirectToolIntegration:
 
         This is the core test that verifies bundle loading works correctly.
         """
-        args = InitializeBundleArgs(source=str(test_bundle_copy))
-
         # This should complete in ~6 seconds based on our direct tests
-        content = await asyncio.wait_for(initialize_bundle(args), timeout=15.0)
+        content = await asyncio.wait_for(
+            initialize_bundle(source=str(test_bundle_copy)), timeout=15.0
+        )
 
         # Verify successful bundle loading
         assert len(content) > 0, "initialize_bundle should return content"
@@ -114,8 +104,7 @@ class TestDirectToolIntegration:
     async def test_list_available_bundles_tool_direct(self, test_bundle_copy):
         """Test listing available bundles."""
         # List available bundles (should include the bundle file we copied)
-        list_args = ListAvailableBundlesArgs()
-        content = await list_available_bundles(list_args)
+        content = await list_available_bundles()
 
         assert len(content) > 0, "Should have bundle list content"
 
@@ -139,12 +128,10 @@ class TestDirectToolIntegration:
     async def test_file_operations_direct(self, test_bundle_copy):
         """Test file operations (list_files, read_file) via direct calls."""
         # Initialize bundle first
-        init_args = InitializeBundleArgs(source=str(test_bundle_copy))
-        await initialize_bundle(init_args)
+        await initialize_bundle(source=str(test_bundle_copy))
 
         # Test list_files
-        list_args = ListFilesArgs(path="/", recursive=False)
-        list_content = await list_files(list_args)
+        list_content = await list_files(path="/", recursive=False)
 
         assert len(list_content) > 0, "Should have file listing content"
         files_text = list_content[0].text
@@ -165,8 +152,7 @@ class TestDirectToolIntegration:
                     if first_file.get("type") == "file":
                         file_path = first_file.get("path", first_file.get("name", ""))
                         if file_path:
-                            read_args = ReadFileArgs(path=file_path)
-                            read_content = await read_file(read_args)
+                            read_content = await read_file(path=file_path)
                             assert len(read_content) > 0, f"Should be able to read file {file_path}"
         except json.JSONDecodeError:
             # If not JSON, just verify we got some text output
@@ -178,19 +164,16 @@ class TestDirectToolIntegration:
     async def test_grep_functionality_direct(self, test_bundle_copy):
         """Test grep functionality via direct calls."""
         # Initialize bundle first
-        init_args = InitializeBundleArgs(source=str(test_bundle_copy))
-        await initialize_bundle(init_args)
+        await initialize_bundle(source=str(test_bundle_copy))
 
         # Test grep for common patterns
-        grep_args = GrepFilesArgs(
+        grep_content = await grep_files(
             pattern="kube",  # Look for kubernetes-related content
             path="/",
             recursive=True,
             case_sensitive=False,
             max_results=100,
         )
-
-        grep_content = await grep_files(grep_args)
         assert len(grep_content) > 0, "Should have grep results content"
 
         # The grep might not find anything, but should return valid response
@@ -201,14 +184,13 @@ class TestDirectToolIntegration:
     async def test_kubectl_tool_direct(self, test_bundle_copy):
         """Test kubectl tool via direct calls."""
         # Initialize bundle first
-        init_args = InitializeBundleArgs(source=str(test_bundle_copy))
-        await initialize_bundle(init_args)
+        await initialize_bundle(source=str(test_bundle_copy))
 
         # Test kubectl version command (should work even with limited cluster)
-        kubectl_args = KubectlCommandArgs(command="version --client", timeout=10, json_output=False)
-
         try:
-            kubectl_content = await asyncio.wait_for(kubectl(kubectl_args), timeout=15.0)
+            kubectl_content = await asyncio.wait_for(
+                kubectl(command="version --client", timeout=10, json_output=False), timeout=15.0
+            )
             assert len(kubectl_content) > 0, "Should have kubectl output"
 
             kubectl_text = kubectl_content[0].text
@@ -228,22 +210,19 @@ class TestDirectToolIntegration:
     async def test_complete_workflow_direct(self, test_bundle_copy):
         """Test complete bundle analysis workflow via direct tool calls."""
         # Step 1: Initialize bundle
-        init_args = InitializeBundleArgs(source=str(test_bundle_copy))
-        init_content = await initialize_bundle(init_args)
+        init_content = await initialize_bundle(source=str(test_bundle_copy))
 
         assert len(init_content) > 0, "Bundle initialization should return content"
         print(f"Bundle initialized: {init_content[0].text[:100]}...")
 
         # Step 2: List available bundles
-        list_args = ListAvailableBundlesArgs()
-        list_content = await list_available_bundles(list_args)
+        list_content = await list_available_bundles()
 
         assert len(list_content) > 0, "Should have bundle list"
         print(f"Available bundles: {len(list_content)} entries")
 
         # Step 3: List files in bundle
-        files_args = ListFilesArgs(path="/", recursive=True)
-        files_content = await list_files(files_args)
+        files_content = await list_files(path="/", recursive=True)
 
         assert len(files_content) > 0, "Should have file listing"
         print(f"File listing obtained: {len(files_content[0].text)} chars")

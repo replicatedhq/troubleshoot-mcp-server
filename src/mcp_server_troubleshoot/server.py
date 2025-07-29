@@ -15,16 +15,11 @@ from mcp.types import TextContent
 from .bundle import (
     BundleManager,
     BundleManagerError,
-    InitializeBundleArgs,
-    ListAvailableBundlesArgs,
 )
-from .kubectl import KubectlError, KubectlExecutor, KubectlCommandArgs
+from .kubectl import KubectlError, KubectlExecutor
 from .files import (
     FileExplorer,
     FileSystemError,
-    GrepFilesArgs,
-    ListFilesArgs,
-    ReadFileArgs,
 )
 from .lifecycle import app_lifespan, AppContext
 from .formatters import get_formatter, ResponseFormatter
@@ -144,25 +139,26 @@ def check_response_size(
 
 
 @mcp.tool()
-async def initialize_bundle(args: InitializeBundleArgs) -> List[TextContent]:
+async def initialize_bundle(
+    source: str, force: bool = False, verbosity: Optional[str] = None
+) -> List[TextContent]:
     """
     Initialize a Kubernetes support bundle for analysis. This tool loads a bundle
     and makes it available for exploration with other tools.
 
     Args:
-        args: Arguments containing:
-            source: (string, required) The source of the bundle (URL or local file path)
-            force: (boolean, optional) Whether to force re-initialization if a bundle
-                is already active. Defaults to False.
-            verbosity: (string, optional) Verbosity level for response formatting
-                (minimal|standard|verbose|debug). Defaults to minimal.
+        source: (string, required) The source of the bundle (URL or local file path)
+        force: (boolean, optional) Whether to force re-initialization if a bundle
+            is already active. Defaults to False.
+        verbosity: (string, optional) Verbosity level for response formatting
+            (minimal|standard|verbose|debug). Defaults to minimal.
 
     Returns:
         Metadata about the initialized bundle including path and kubeconfig location.
         If the API server is not available, also returns diagnostic information.
     """
     bundle_manager = get_bundle_manager()
-    formatter = get_formatter(args.verbosity)
+    formatter = get_formatter(verbosity)
 
     try:
         # Check if sbctl is available before attempting to initialize
@@ -174,7 +170,7 @@ async def initialize_bundle(args: InitializeBundleArgs) -> List[TextContent]:
             return [TextContent(type="text", text=formatted_error)]
 
         # Initialize the bundle
-        result = await bundle_manager.initialize_bundle(args.source, args.force)
+        result = await bundle_manager.initialize_bundle(source, force)
 
         # Check if the API server is available
         api_server_available = await bundle_manager.check_api_server_available()
@@ -215,28 +211,29 @@ async def initialize_bundle(args: InitializeBundleArgs) -> List[TextContent]:
 
 
 @mcp.tool()
-async def list_available_bundles(args: ListAvailableBundlesArgs) -> List[TextContent]:
+async def list_available_bundles(
+    include_invalid: bool = False, verbosity: Optional[str] = None
+) -> List[TextContent]:
     """
     Scan the bundle storage directory to find available compressed bundle files and list them.
     This tool helps discover which bundles are available for initialization.
 
     Args:
-        args: Arguments containing:
-            include_invalid: (boolean, optional) Whether to include invalid or inaccessible
-                bundles in the results. Defaults to False.
-            verbosity: (string, optional) Verbosity level for response formatting
-                (minimal|standard|verbose|debug). Defaults to minimal.
+        include_invalid: (boolean, optional) Whether to include invalid or inaccessible
+            bundles in the results. Defaults to False.
+        verbosity: (string, optional) Verbosity level for response formatting
+            (minimal|standard|verbose|debug). Defaults to minimal.
 
     Returns:
         A list of available bundle files with details including path, size, and modification time.
         Bundles are validated to ensure they have the expected support bundle structure.
     """
     bundle_manager = get_bundle_manager()
-    formatter = get_formatter(args.verbosity)
+    formatter = get_formatter(verbosity)
 
     try:
         # List available bundles
-        bundles = await bundle_manager.list_available_bundles(args.include_invalid)
+        bundles = await bundle_manager.list_available_bundles(include_invalid)
 
         response = formatter.format_bundle_list(bundles)
         return check_response_size(response, "list_bundles", formatter)
@@ -254,20 +251,21 @@ async def list_available_bundles(args: ListAvailableBundlesArgs) -> List[TextCon
 
 
 @mcp.tool()
-async def kubectl(args: KubectlCommandArgs) -> List[TextContent]:
+async def kubectl(
+    command: str, timeout: int = 30, json_output: bool = False, verbosity: Optional[str] = None
+) -> List[TextContent]:
     """
     Execute kubectl commands against the initialized bundle's API server. Allows
     running Kubernetes CLI commands to explore resources in the support bundle.
 
     Args:
-        args: Arguments containing:
-            command: (string, required) The kubectl command to execute (e.g., "get pods",
-                "get nodes -o wide", "describe deployment nginx")
-            timeout: (integer, optional) Timeout in seconds for the command. Defaults to 30.
-            json_output: (boolean, optional) Whether to format the output as JSON.
-                Defaults to True. Set to False for plain text output.
-            verbosity: (string, optional) Verbosity level for response formatting
-                (minimal|standard|verbose|debug). Defaults to minimal.
+        command: (string, required) The kubectl command to execute (e.g., "get pods",
+            "get nodes -o wide", "describe deployment nginx")
+        timeout: (integer, optional) Timeout in seconds for the command. Defaults to 30.
+        json_output: (boolean, optional) Whether to format the output as JSON.
+            Defaults to False. Set to True for JSON output.
+        verbosity: (string, optional) Verbosity level for response formatting
+            (minimal|standard|verbose|debug). Defaults to minimal.
 
     Returns:
         The formatted output from the kubectl command, along with execution metadata
@@ -275,7 +273,7 @@ async def kubectl(args: KubectlCommandArgs) -> List[TextContent]:
         information if the command fails or API server is not available.
     """
     bundle_manager = get_bundle_manager()
-    formatter = get_formatter(args.verbosity)
+    formatter = get_formatter(verbosity)
 
     try:
         # Check if a bundle is initialized first
@@ -314,7 +312,7 @@ async def kubectl(args: KubectlCommandArgs) -> List[TextContent]:
             return check_response_size(formatted_error, "kubectl", formatter)
 
         # Execute the kubectl command
-        result = await get_kubectl_executor().execute(args.command, args.timeout, args.json_output)
+        result = await get_kubectl_executor().execute(command, timeout, json_output)
 
         # Format response using the formatter
         response = formatter.format_kubectl_result(result)
@@ -370,7 +368,9 @@ async def kubectl(args: KubectlCommandArgs) -> List[TextContent]:
 
 
 @mcp.tool()
-async def list_files(args: ListFilesArgs) -> List[TextContent]:
+async def list_files(
+    path: str, recursive: bool = False, verbosity: Optional[str] = None
+) -> List[TextContent]:
     """
     List files and directories within the support bundle. This tool lets you
     explore the directory structure of the initialized bundle.
@@ -379,23 +379,22 @@ async def list_files(args: ListFilesArgs) -> List[TextContent]:
     If no bundle is initialized, use the `list_available_bundles` tool to find available bundles.
 
     Args:
-        args: Arguments containing:
-            path: (string, required) The path within the bundle to list. Use "" or "/"
-                for root directory. Path cannot contain directory traversal (e.g., "../").
-            recursive: (boolean, optional) Whether to list files and directories recursively.
-                Defaults to False. Set to True to show nested files.
-            verbosity: (string, optional) Verbosity level for response formatting
-                (minimal|standard|verbose|debug). Defaults to minimal.
+        path: (string, required) The path within the bundle to list. Use "" or "/"
+            for root directory. Path cannot contain directory traversal (e.g., "../").
+        recursive: (boolean, optional) Whether to list files and directories recursively.
+            Defaults to False. Set to True to show nested files.
+        verbosity: (string, optional) Verbosity level for response formatting
+            (minimal|standard|verbose|debug). Defaults to minimal.
 
     Returns:
         A JSON list of entries with file/directory information including name, path, type
         (file or dir), size, access time, modification time, and whether binary.
         Also returns metadata about the directory listing like total file and directory counts.
     """
-    formatter = get_formatter(args.verbosity)
+    formatter = get_formatter(verbosity)
 
     try:
-        result = await get_file_explorer().list_files(args.path, args.recursive)
+        result = await get_file_explorer().list_files(path, recursive)
         response = formatter.format_file_list(result)
         return check_response_size(response, "list_files", formatter)
 
@@ -417,7 +416,9 @@ async def list_files(args: ListFilesArgs) -> List[TextContent]:
 
 
 @mcp.tool()
-async def read_file(args: ReadFileArgs) -> List[TextContent]:
+async def read_file(
+    path: str, start_line: int = 0, end_line: Optional[int] = None, verbosity: Optional[str] = None
+) -> List[TextContent]:
     """
     Read a file within the support bundle with optional line range filtering.
     Displays file content with line numbers.
@@ -426,24 +427,23 @@ async def read_file(args: ReadFileArgs) -> List[TextContent]:
     If no bundle is initialized, use the `list_available_bundles` tool to find available bundles.
 
     Args:
-        args: Arguments containing:
-            path: (string, required) The path to the file within the bundle to read.
-                Path cannot contain directory traversal (e.g., "../").
-            start_line: (integer, optional) The line number to start reading from (0-indexed).
-                Defaults to 0 (the first line).
-            end_line: (integer or null, optional) The line number to end reading at
-                (0-indexed, inclusive). Defaults to null, which means read to the end of the file.
-            verbosity: (string, optional) Verbosity level for response formatting
-                (minimal|standard|verbose|debug). Defaults to minimal.
+        path: (string, required) The path to the file within the bundle to read.
+            Path cannot contain directory traversal (e.g., "../").
+        start_line: (integer, optional) The line number to start reading from (0-indexed).
+            Defaults to 0 (the first line).
+        end_line: (integer or null, optional) The line number to end reading at
+            (0-indexed, inclusive). Defaults to null, which means read to the end of the file.
+        verbosity: (string, optional) Verbosity level for response formatting
+            (minimal|standard|verbose|debug). Defaults to minimal.
 
     Returns:
         The content of the file with line numbers. For text files, displays the
         specified line range with line numbers. For binary files, displays a hex dump.
     """
-    formatter = get_formatter(args.verbosity)
+    formatter = get_formatter(verbosity)
 
     try:
-        result = await get_file_explorer().read_file(args.path, args.start_line, args.end_line)
+        result = await get_file_explorer().read_file(path, start_line, end_line)
         response = formatter.format_file_content(result)
         return check_response_size(response, "read_file", formatter)
 
@@ -465,7 +465,17 @@ async def read_file(args: ReadFileArgs) -> List[TextContent]:
 
 
 @mcp.tool()
-async def grep_files(args: GrepFilesArgs) -> List[TextContent]:
+async def grep_files(
+    pattern: str,
+    path: str,
+    recursive: bool = True,
+    glob_pattern: Optional[str] = None,
+    case_sensitive: bool = False,
+    max_results: int = 1000,
+    max_results_per_file: int = 5,
+    max_files: int = 10,
+    verbosity: Optional[str] = None,
+) -> List[TextContent]:
     """
     Search for patterns in files within the support bundle. Searches both file content
     and filenames, making it useful for finding keywords, error messages, or identifying files.
@@ -474,36 +484,41 @@ async def grep_files(args: GrepFilesArgs) -> List[TextContent]:
     If no bundle is initialized, use the `list_available_bundles` tool to find available bundles.
 
     Args:
-        args: Arguments containing:
-            pattern: (string, required) The pattern to search for. Supports regex syntax.
-            path: (string, required) The path within the bundle to search. Use "" or "/"
-                to search from root. Path cannot contain directory traversal (e.g., "../").
-            recursive: (boolean, optional) Whether to search recursively in subdirectories.
-                Defaults to True.
-            glob_pattern: (string or null, optional) File pattern to filter which files
-                to search (e.g., "*.yaml", "*.{json,log}"). Defaults to null (search all files).
-            case_sensitive: (boolean, optional) Whether the search is case-sensitive.
-                Defaults to False (case-insensitive search).
-            max_results: (integer, optional) Maximum number of results to return.
-                Defaults to 1000.
-            verbosity: (string, optional) Verbosity level for response formatting
-                (minimal|standard|verbose|debug). Defaults to minimal.
+        pattern: (string, required) The pattern to search for. Supports regex syntax.
+        path: (string, required) The path within the bundle to search. Use "" or "/"
+            to search from root. Path cannot contain directory traversal (e.g., "../").
+        recursive: (boolean, optional) Whether to search recursively in subdirectories.
+            Defaults to True.
+        glob_pattern: (string or null, optional) File pattern to filter which files
+            to search (e.g., "*.yaml", "*.{json,log}"). Defaults to null (search all files).
+        case_sensitive: (boolean, optional) Whether the search is case-sensitive.
+            Defaults to False (case-insensitive search).
+        max_results: (integer, optional) Maximum number of results to return.
+            Defaults to 1000.
+        max_results_per_file: (integer, optional) Maximum number of results to return per file.
+            Defaults to 5.
+        max_files: (integer, optional) Maximum number of files to search/return.
+            Defaults to 10.
+        verbosity: (string, optional) Verbosity level for response formatting
+            (minimal|standard|verbose|debug). Defaults to minimal.
 
     Returns:
         Matches found in file contents and filenames, grouped by file.
         Also includes search metadata such as the number of files searched
         and the total number of matches found.
     """
-    formatter = get_formatter(args.verbosity)
+    formatter = get_formatter(verbosity)
 
     try:
         result = await get_file_explorer().grep_files(
-            args.pattern,
-            args.path,
-            args.recursive,
-            args.glob_pattern,
-            args.case_sensitive,
-            args.max_results,
+            pattern,
+            path,
+            recursive,
+            glob_pattern,
+            case_sensitive,
+            max_results,
+            max_results_per_file,
+            max_files,
         )
 
         response = formatter.format_grep_results(result)

@@ -278,10 +278,10 @@ async def test_file_explorer_list_files_error_handling(
     if expected_error:
         # Should raise an error
         with pytest.raises(expected_error):
-            await explorer.list_files(actual_path, False)
+            await explorer.list_files(path=actual_path, recursive=False)
     else:
         # Should succeed
-        result = await explorer.list_files(actual_path, False)
+        result = await explorer.list_files(path=actual_path, recursive=False)
         assert isinstance(result, FileListResult)
         assert result.path == actual_path
         assert result.total_files >= 0
@@ -334,10 +334,10 @@ async def test_file_explorer_read_file_error_handling(
     if expected_error:
         # Should raise an error
         with pytest.raises(expected_error):
-            await explorer.read_file(path)
+            await explorer.read_file(path=path)
     else:
         # Should succeed
-        result = await explorer.read_file(path)
+        result = await explorer.read_file(path=path)
         assert isinstance(result, FileContentResult)
         assert result.path == path
         assert result.content is not None
@@ -389,7 +389,9 @@ async def test_file_explorer_grep_files_behavior(
     explorer = FileExplorer(bundle_manager)
 
     # Run the grep operation
-    result = await explorer.grep_files(pattern, path, True, None, case_sensitive)
+    result = await explorer.grep_files(
+        pattern=pattern, path=path, recursive=True, glob_pattern=None, case_sensitive=case_sensitive
+    )
 
     # Verify the result structure
     assert isinstance(result, GrepResult)

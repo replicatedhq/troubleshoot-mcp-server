@@ -75,7 +75,7 @@ async def test_kubectl_executor_execute_no_bundle():
     executor = KubectlExecutor(bundle_manager)
 
     with pytest.raises(KubectlError) as excinfo:
-        await executor.execute("get pods")
+        await executor.execute(command="get pods")
 
     assert "No bundle is initialized" in str(excinfo.value)
     assert excinfo.value.exit_code == 1
@@ -97,7 +97,7 @@ async def test_kubectl_executor_execute_host_only_bundle():
     executor = KubectlExecutor(bundle_manager)
 
     with pytest.raises(KubectlError) as excinfo:
-        await executor.execute("get pods")
+        await executor.execute(command="get pods")
 
     assert "Host-only bundle detected" in str(excinfo.value)
     assert "no cluster resources" in str(excinfo.value)
@@ -140,7 +140,7 @@ async def test_kubectl_executor_execute_success():
     executor._run_kubectl_command = AsyncMock(return_value=mock_result)
 
     # Execute a command
-    result = await executor.execute("get pods")
+    result = await executor.execute(command="get pods")
 
     # Verify the result
     assert result == mock_result
@@ -172,7 +172,9 @@ async def test_kubectl_executor_run_kubectl_command():
     # Mock create_subprocess_exec
     with patch("asyncio.create_subprocess_exec", return_value=mock_process) as mock_exec:
         # Execute a command
-        result = await executor._run_kubectl_command("get pods", bundle, 30, True)
+        result = await executor._run_kubectl_command(
+            command="get pods", bundle=bundle, timeout=30, json_output=True
+        )
 
         # Verify the result
         assert result.command == "get pods -o json"
@@ -223,7 +225,9 @@ async def test_kubectl_executor_run_kubectl_command_no_json():
     # Mock create_subprocess_exec
     with patch("asyncio.create_subprocess_exec", return_value=mock_process) as mock_exec:
         # Execute a command
-        result = await executor._run_kubectl_command("get pods", bundle, 30, False)
+        result = await executor._run_kubectl_command(
+            command="get pods", bundle=bundle, timeout=30, json_output=False
+        )
 
         # Verify the result
         assert result.command == "get pods"
@@ -271,7 +275,9 @@ async def test_kubectl_executor_run_kubectl_command_explicit_format():
     # Mock create_subprocess_exec
     with patch("asyncio.create_subprocess_exec", return_value=mock_process) as mock_exec:
         # Execute a command with explicit format
-        result = await executor._run_kubectl_command("get pods -o yaml", bundle, 30, True)
+        result = await executor._run_kubectl_command(
+            command="get pods -o yaml", bundle=bundle, timeout=30, json_output=True
+        )
 
         # Verify the result
         assert result.command == "get pods -o yaml"
@@ -318,7 +324,9 @@ async def test_kubectl_executor_run_kubectl_command_error():
     with patch("asyncio.create_subprocess_exec", return_value=mock_process):
         # Execute a command
         with pytest.raises(KubectlError) as excinfo:
-            await executor._run_kubectl_command("get pods", bundle, 30, True)
+            await executor._run_kubectl_command(
+                command="get pods", bundle=bundle, timeout=30, json_output=True
+            )
 
         # Verify the error
         assert "kubectl command failed" in str(excinfo.value)
@@ -365,7 +373,9 @@ async def test_kubectl_executor_run_kubectl_command_timeout():
     ):
         # Execute a command with a short timeout
         with pytest.raises(KubectlError) as excinfo:
-            await executor._run_kubectl_command("get pods", bundle, 0.1, True)  # 0.1 second timeout
+            await executor._run_kubectl_command(
+                command="get pods", bundle=bundle, timeout=0.1, json_output=True
+            )  # 0.1 second timeout
 
         # Verify the error
         assert "kubectl command timed out" in str(excinfo.value)
@@ -432,7 +442,9 @@ async def test_kubectl_default_cli_format():
     # Mock create_subprocess_exec
     with patch("asyncio.create_subprocess_exec", return_value=mock_process) as mock_exec:
         # Execute with default json_output=False
-        result = await executor._run_kubectl_command("get pods", bundle, 30, False)
+        result = await executor._run_kubectl_command(
+            command="get pods", bundle=bundle, timeout=30, json_output=False
+        )
 
         # Verify CLI format is returned
         assert result.is_json is False
@@ -473,7 +485,9 @@ async def test_kubectl_explicit_json_request():
     # Mock create_subprocess_exec
     with patch("asyncio.create_subprocess_exec", return_value=mock_process) as mock_exec:
         # Execute with explicit json_output=True
-        result = await executor._run_kubectl_command("get pods", bundle, 30, True)
+        result = await executor._run_kubectl_command(
+            command="get pods", bundle=bundle, timeout=30, json_output=True
+        )
 
         # Verify JSON format is returned
         assert result.is_json is True
@@ -514,7 +528,9 @@ async def test_kubectl_user_format_preserved():
     # Mock create_subprocess_exec
     with patch("asyncio.create_subprocess_exec", return_value=mock_process) as mock_exec:
         # Execute with user-specified YAML format
-        result = await executor._run_kubectl_command("get pods -o yaml", bundle, 30, False)
+        result = await executor._run_kubectl_command(
+            command="get pods -o yaml", bundle=bundle, timeout=30, json_output=False
+        )
 
         # Verify user format is preserved
         assert result.command == "get pods -o yaml"  # No modification
@@ -557,7 +573,7 @@ async def test_kubectl_executor_defaults_to_table_format():
     executor._run_kubectl_command = AsyncMock(return_value=mock_result)
 
     # Execute a command WITHOUT specifying json_output (should default to False)
-    result = await executor.execute("get pods")
+    result = await executor.execute(command="get pods")
 
     # Verify the result is NOT JSON
     assert result.is_json is False, "Default kubectl execution should NOT return JSON format"
@@ -626,7 +642,7 @@ async def test_kubectl_executor_host_only_bundle():
 
     # Test that executing any kubectl command raises appropriate error
     with pytest.raises(KubectlError) as exc_info:
-        await executor.execute("get pods")
+        await executor.execute(command="get pods")
 
     # Verify the error message is appropriate for host-only bundles
     error = exc_info.value
@@ -668,7 +684,7 @@ async def test_kubectl_executor_regular_bundle_not_affected():
     with patch("pathlib.Path.exists", return_value=True):
         with patch("asyncio.create_subprocess_exec", return_value=mock_process):
             # This should work normally (no host-only bundle error)
-            result = await executor.execute("get pods", json_output=False)
+            result = await executor.execute(command="get pods", json_output=False)
 
             # Verify it returns a normal result
             assert result.exit_code == 0
@@ -687,7 +703,7 @@ async def test_kubectl_executor_no_bundle_still_works():
 
     # Test that it raises the normal "no bundle" error, not host-only error
     with pytest.raises(KubectlError) as exc_info:
-        await executor.execute("get pods")
+        await executor.execute(command="get pods")
 
     # Verify this is the standard "no bundle" error
     error = exc_info.value

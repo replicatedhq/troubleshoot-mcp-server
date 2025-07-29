@@ -97,13 +97,10 @@ async def test_initialize_bundle_tool(tmp_path: Path) -> None:
         mock_diag.return_value = {"api_server_available": True}
         mock_get_manager.return_value = bundle_manager
 
-        # Create InitializeBundleArgs instance
-        from mcp_server_troubleshoot.bundle import InitializeBundleArgs
-
-        args = InitializeBundleArgs(source=str(temp_source_file), force=False, verbosity="verbose")
-
-        # Call the tool function directly
-        response = await initialize_bundle(args)
+        # Call the tool function directly with parameters
+        response = await initialize_bundle(
+            source=str(temp_source_file), force=False, verbosity="verbose"
+        )
 
         # Verify the bundle manager methods were called
         mock_sbctl.assert_awaited_once()
@@ -174,15 +171,10 @@ async def test_kubectl_tool(tmp_path: Path) -> None:
             mock_get_manager.return_value = bundle_manager
             mock_get_executor.return_value = kubectl_executor
 
-            # Create KubectlCommandArgs instance
-            from mcp_server_troubleshoot.kubectl import KubectlCommandArgs
-
-            args = KubectlCommandArgs(
+            # Call the tool function directly with parameters
+            response = await kubectl(
                 command="get pods", timeout=30, json_output=True, verbosity="verbose"
             )
-
-            # Call the tool function directly
-            response = await kubectl(args)
 
             # Verify the API server check was called
             mock_api.assert_awaited_once()
@@ -235,15 +227,10 @@ async def test_kubectl_tool_host_only_bundle(tmp_path: Path) -> None:
         ):
             mock_get_manager.return_value = bundle_manager
 
-            # Create KubectlCommandArgs instance
-            from mcp_server_troubleshoot.kubectl import KubectlCommandArgs
-
-            args = KubectlCommandArgs(
+            # Call the tool function directly with parameters
+            response = await kubectl(
                 command="get pods", timeout=30, json_output=True, verbosity="verbose"
             )
-
-            # Call the tool function directly
-            response = await kubectl(args)
 
             # Verify the error response
             assert isinstance(response, list)
@@ -303,10 +290,9 @@ async def test_file_operations(tmp_path: Path) -> None:
             mock_get_explorer.return_value = file_explorer
 
             # 1. Test list_files with real files
-            from mcp_server_troubleshoot.files import ListFilesArgs
-
-            list_args = ListFilesArgs(path="test_data/dir1", recursive=False, verbosity="verbose")
-            list_response = await list_files(list_args)
+            list_response = await list_files(
+                path="test_data/dir1", recursive=False, verbosity="verbose"
+            )
 
             # Verify the response contains real file information
             assert len(list_response) == 1
@@ -315,15 +301,12 @@ async def test_file_operations(tmp_path: Path) -> None:
             assert "file1.txt" in list_response[0].text
 
             # 2. Test read_file with real file
-            from mcp_server_troubleshoot.files import ReadFileArgs
-
-            read_args = ReadFileArgs(
+            read_response = await read_file(
                 path="test_data/dir1/file1.txt",
                 start_line=0,
                 end_line=2,
                 verbosity="verbose",
             )
-            read_response = await read_file(read_args)
 
             # Verify the response contains real file content
             assert len(read_response) == 1
@@ -332,9 +315,7 @@ async def test_file_operations(tmp_path: Path) -> None:
             assert "This is the file content" in read_response[0].text
 
             # 3. Test grep_files with real file content
-            from mcp_server_troubleshoot.files import GrepFilesArgs
-
-            grep_args = GrepFilesArgs(
+            grep_response = await grep_files(
                 pattern="pattern",
                 path="test_data",
                 recursive=True,
@@ -345,7 +326,6 @@ async def test_file_operations(tmp_path: Path) -> None:
                 max_files=10,
                 verbosity="verbose",
             )
-            grep_response = await grep_files(grep_args)
 
             # Verify the response contains real grep results
             assert len(grep_response) == 1
