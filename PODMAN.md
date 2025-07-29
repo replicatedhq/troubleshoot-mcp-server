@@ -14,7 +14,9 @@ cd troubleshoot-mcp-server
 ./scripts/build.sh
 ```
 
-This will create a Podman image named `mcp-server-troubleshoot:latest`.
+This will create a Podman image named `troubleshoot-mcp-server-dev:latest` for local development.
+
+**Note**: Local development builds use the `-dev` suffix to avoid conflicts with official production releases. The production image is named `troubleshoot-mcp-server:latest`.
 
 ## Running the Container
 
@@ -31,7 +33,7 @@ export SBCTL_TOKEN="your_token_here"
 podman run -i --rm \
   -v "$(pwd)/bundles:/data/bundles" \
   -e SBCTL_TOKEN="$SBCTL_TOKEN" \
-  mcp-server-troubleshoot:latest
+  troubleshoot-mcp-server-dev:latest
 ```
 
 ### Command Parameters Explained
@@ -92,7 +94,7 @@ To use the Podman container with MCP clients (such as Claude or other AI models)
 You can get the recommended configuration by running:
 
 ```bash
-podman run --rm mcp-server-troubleshoot:latest --show-config
+podman run --rm troubleshoot-mcp-server-dev:latest --show-config
 ```
 
 The output will provide a ready-to-use configuration for MCP clients:
@@ -110,7 +112,7 @@ The output will provide a ready-to-use configuration for MCP clients:
         "${HOME}/bundles:/data/bundles",
         "-e",
         "SBCTL_TOKEN=${SBCTL_TOKEN}",
-        "mcp-server-troubleshoot:latest"
+        "troubleshoot-mcp-server-dev:latest"
       ]
     }
   }
@@ -143,7 +145,7 @@ In the Inspector UI:
    podman run -i --rm \
      -v "$(pwd)/bundles:/data/bundles" \
      -e SBCTL_TOKEN="$SBCTL_TOKEN" \
-     mcp-server-troubleshoot:latest
+     troubleshoot-mcp-server-dev:latest
    ```
 4. Click "Save"
 

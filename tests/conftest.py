@@ -174,7 +174,7 @@ def build_container_image(project_root):
     try:
         # Remove any existing image first to ensure a clean build
         subprocess.run(
-            ["podman", "rmi", "-f", "troubleshoot-mcp-server:latest"],
+            ["podman", "rmi", "-f", "troubleshoot-mcp-server-dev:latest"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             timeout=30,
@@ -247,11 +247,17 @@ def container_image(request):
             pytest.skip(f"Failed to build container image: {result.stderr}")
 
     # Yield to allow tests to run
-    yield "troubleshoot-mcp-server:latest"
+    yield "troubleshoot-mcp-server-dev:latest"
 
     # Explicitly clean up any running containers
     containers_result = subprocess.run(
-        ["podman", "ps", "-q", "--filter", "ancestor=troubleshoot-mcp-server:latest"],
+        [
+            "podman",
+            "ps",
+            "-q",
+            "--filter",
+            "ancestor=troubleshoot-mcp-server-dev:latest",
+        ],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,

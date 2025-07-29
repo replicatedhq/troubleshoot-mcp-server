@@ -27,7 +27,7 @@ The easiest way to get started is using Podman:
 podman run -i --rm \
   -v "/path/to/bundles:/data/bundles" \
   -e SBCTL_TOKEN="your-token" \
-  mcp-server-troubleshoot:latest
+  troubleshoot-mcp-server-dev:latest
 ```
 
 See the [Podman documentation](PODMAN.md) for comprehensive container configuration details.
@@ -57,6 +57,37 @@ export SBCTL_TOKEN=your-token
 ```bash
 uv run python -m mcp_server_troubleshoot
 ```
+
+## Container Image Variants
+
+This project provides two distinct container image variants:
+
+### Development Image: `troubleshoot-mcp-server-dev:latest`
+- **Purpose**: Local development and testing
+- **Built by**: `./scripts/build.sh` (default)
+- **Usage**: When building from source or developing locally
+- **Example**: 
+  ```bash
+  ./scripts/build.sh
+  podman run -i --rm troubleshoot-mcp-server-dev:latest
+  ```
+
+### Production Image: `troubleshoot-mcp-server:latest`
+- **Purpose**: Official releases and production deployments
+- **Built by**: CI/CD pipeline with `IMAGE_NAME=troubleshoot-mcp-server ./scripts/build.sh`
+- **Usage**: In production environments or when using official releases
+- **Example**:
+  ```bash
+  IMAGE_NAME=troubleshoot-mcp-server ./scripts/build.sh
+  podman run -i --rm troubleshoot-mcp-server:latest
+  ```
+
+### Why Two Variants?
+
+The `-dev` suffix prevents conflicts between local development images and official production releases. This allows users to:
+- Use official container releases without interference from local builds
+- Develop and test locally without overwriting production images
+- Maintain clear separation between development and production environments
 
 ## Documentation
 

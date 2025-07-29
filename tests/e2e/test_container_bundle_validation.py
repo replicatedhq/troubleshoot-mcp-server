@@ -21,7 +21,7 @@ from tests.integration.mcp_test_utils import get_test_bundle_path
 logger = logging.getLogger(__name__)
 
 # Container image name (matches build.sh defaults)
-CONTAINER_IMAGE = "troubleshoot-mcp-server:latest"
+CONTAINER_IMAGE = "troubleshoot-mcp-server-dev:latest"
 CONTAINER_RUNTIME = "podman"  # Could be "docker" if preferred
 
 

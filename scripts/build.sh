@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Configuration - use environment variables if set, otherwise use defaults
 # This allows GitHub Actions to override these values
-IMAGE_NAME=${IMAGE_NAME:-"troubleshoot-mcp-server"}
+IMAGE_NAME=${IMAGE_NAME:-"troubleshoot-mcp-server-dev"}
 IMAGE_TAG=${IMAGE_TAG:-"latest"}
 
 # Print commands before executing them

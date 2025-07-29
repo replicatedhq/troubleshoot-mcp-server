@@ -257,7 +257,7 @@ uv run pytest tests/e2e/test_direct_tool_integration.py::TestDirectToolIntegrati
 **Check container logs**:
 ```bash
 # Run container interactively  
-podman run -it --rm troubleshoot-mcp-server:latest /bin/sh
+podman run -it --rm troubleshoot-mcp-server-dev:latest /bin/sh
 ```
 
 ## Future Enhancements

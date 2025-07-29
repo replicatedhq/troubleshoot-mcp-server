@@ -273,12 +273,12 @@ def test_production_container_mcp_protocol():
     # Check if the required container image exists
     try:
         result = subprocess.run(
-            [runtime, "image", "exists", "troubleshoot-mcp-server:latest"],
+            [runtime, "image", "exists", "troubleshoot-mcp-server-dev:latest"],
             capture_output=True,
         )
         if result.returncode != 0:
             pytest.skip(
-                "Container image troubleshoot-mcp-server:latest not available - build first with: MELANGE_TEST_BUILD=true ./scripts/build.sh"
+                "Container image troubleshoot-mcp-server-dev:latest not available - build first with: MELANGE_TEST_BUILD=true ./scripts/build.sh"
             )
     except FileNotFoundError:
         pytest.skip(f"Container runtime {runtime} not found")
@@ -309,7 +309,7 @@ def test_production_container_mcp_protocol():
             container_name,
             "--rm",
             "-i",
-            "troubleshoot-mcp-server:latest",  # Use the built image directly
+            "troubleshoot-mcp-server-dev:latest",  # Use the built image directly
         ],
         input=request_json + "\n",
         capture_output=True,
