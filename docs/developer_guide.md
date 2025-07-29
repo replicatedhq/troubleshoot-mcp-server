@@ -130,8 +130,8 @@ uv run pytest tests/test_integration.py
 ### Code Formatting and Linting
 
 ```bash
-# Format code with Black
-uv run black .
+# Format code with Ruff
+uv run ruff format .
 
 # Lint code with Ruff
 uv run ruff check .

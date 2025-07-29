@@ -203,11 +203,11 @@ For detailed guidance on dependency management, see our [Dependency Management G
 
 ### Code Style
 
-Code formatting is done using Black and Ruff:
+Code formatting is done using Ruff:
 
 ```bash
-# Format code with Black
-uv run black .
+# Format code with Ruff
+uv run ruff format .
 
 # Lint code with Ruff
 uv run ruff check .

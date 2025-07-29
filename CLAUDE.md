@@ -15,7 +15,7 @@ Before starting ANY development work, you MUST complete this checklist:
 
 ### ✅ 1. Environment Setup (One-time)
 - [ ] Run: `./scripts/setup_env.sh` to set up development environment with UV
-- [ ] This installs ALL dependencies from pyproject.toml (including pytest, black, ruff, mypy)
+- [ ] This installs ALL dependencies from pyproject.toml (including pytest, ruff, mypy)
 - [ ] Verify setup: `uv run pytest tests/unit/test_components.py -v`
 - [ ] **DO NOT install additional packages** - everything needed is already configured
 
@@ -43,7 +43,7 @@ After making ANY code changes, you MUST run these commands in order:
 
 ```bash
 # In your worktree directory
-uv run black .                    # Format code - MANDATORY
+uv run ruff format .              # Format code - MANDATORY
 uv run ruff check .               # Lint code - MANDATORY  
 uv run mypy src                   # Type check - MANDATORY
 ```
@@ -51,7 +51,7 @@ uv run mypy src                   # Type check - MANDATORY
 **These commands MUST pass before proceeding. Fix all issues before continuing.**
 
 ### Step 3: Testing Requirements (MANDATORY)
-- [ ] Run relevant tests: `uv run pytest tests/unit/test_[component].py -v`
+- [ ] Run relevant functional tests: `uv run pytest tests/unit/test_[component].py -v`
 - [ ] If integration tests exist: `uv run pytest -m integration`
 - [ ] All tests MUST pass before proceeding
 
@@ -65,7 +65,7 @@ uv run mypy src                   # Type check - MANDATORY
 ### Step 1: Final Quality Check
 - [ ] Run complete test suite: `uv run pytest`
 - [ ] Run slow/container tests locally: `uv run pytest -m slow -v` (REQUIRED - these skip in CI)
-- [ ] Run final quality check: `uv run black . && uv run ruff check . && uv run mypy src`
+- [ ] Run final quality check: `uv run ruff format . && uv run ruff check . && uv run mypy src`
 - [ ] All commands MUST pass
 
 ### Step 2: Push and Create PR
@@ -118,7 +118,7 @@ git branch -d task/[task-name]
 uv run pytest                     # Run tests
 uv run pytest -m unit           # Run unit tests
 uv run pytest -m integration    # Run integration tests
-uv run black .                  # Format code
+uv run ruff format .            # Format code
 uv run ruff check .             # Lint code
 uv run mypy src                 # Type check
 ```
@@ -141,14 +141,14 @@ gh repo view --web              # Open repo in browser
 - Container tests: `uv run pytest -m container`
 - Specific file: `uv run pytest tests/unit/test_bundle.py -v`
 
-**📋 Complete Testing Strategy**: See [docs/TESTING_STRATEGY.md](docs/TESTING_STRATEGY.md) for comprehensive documentation of our testing approach, CI integration, and local testing commands.
+**📋 Testing Strategy**: See [docs/TESTING_STRATEGY.md](docs/TESTING_STRATEGY.md) for our functional testing approach, CI integration, and local testing commands.
 
 ## ENFORCEMENT RULES
 
 ### ❌ NEVER DO:
 - Install additional packages (all dependencies are in pyproject.toml)
 - Run Python commands without `uv run`
-- Skip code quality checks (black, ruff, mypy)
+- Skip code quality checks (ruff format, ruff check, mypy)
 - Work directly on main branch
 - Create branches without worktrees
 - Include AI attribution in commit messages

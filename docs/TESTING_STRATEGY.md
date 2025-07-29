@@ -86,7 +86,7 @@ graph TB
 #### **Stage 1 Jobs (Fast - Run in Parallel)**
 
 **Job: `lint`** (~30 seconds)
-- Code quality checks (ruff, black, mypy)
+- Code quality checks (ruff format, ruff check, mypy)
 - Fails fast on formatting/style issues
 
 **Job: `unit-tests`** (~23 seconds)  
@@ -282,7 +282,7 @@ When adding new features:
 **Before PR Submission Checklist**:
 - [ ] All CI jobs pass (lint, unit, integration, e2e-fast)
 - [ ] **Container/slow tests pass locally** (`uv run pytest -m slow -v`)
-- [ ] Code quality checks pass (`uv run black . && uv run ruff check . && uv run mypy src`)
+- [ ] Code quality checks pass (`uv run ruff format . && uv run ruff check . && uv run mypy src`)
 - [ ] Documentation updated if needed
 
 ⚠️ **IMPORTANT**: The `pytest -m slow` tests are **REQUIRED** to pass locally before marking any task complete or submitting a PR. These tests validate the production container build and functionality.

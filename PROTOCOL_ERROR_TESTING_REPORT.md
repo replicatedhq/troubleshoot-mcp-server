@@ -105,7 +105,7 @@ Created a comprehensive test suite with 6 test classes covering all required err
 - **Implementation**: Complete ✅
 - **Test Suite**: 19 comprehensive test methods ✅
 - **Error Scenarios**: All required scenarios covered ✅
-- **Code Quality**: Passes black, ruff, mypy ✅
+- **Code Quality**: Passes ruff format, ruff check, mypy ✅
 
 ### Test Execution Notes
 - Some tests experience timeouts in current environment
@@ -135,7 +135,7 @@ Created a comprehensive test suite with 6 test classes covering all required err
 
 ```bash
 # All checks pass
-uv run black .           # ✅ Code formatting
+uv run ruff format .     # ✅ Code formatting
 uv run ruff check .      # ✅ Linting 
 uv run mypy src          # ✅ Type checking
 ```

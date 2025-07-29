@@ -78,9 +78,9 @@ The unit tests test individual components in isolation:
 
 #### Parameterized Unit Tests
 
-These tests use pytest parameterization to test multiple input combinations:
+These tests use pytest parameterization to test key input combinations:
 
-- `test_files_parametrized.py`: Comprehensive tests for FileExplorer with multiple scenarios
+- `test_files_parametrized.py`: Focused tests for FileExplorer with essential scenarios
 - `test_kubectl_parametrized.py`: Tests kubectl command execution with various inputs
 - `test_server_parametrized.py`: Tests MCP server tools with different input combinations
 
@@ -124,7 +124,7 @@ The test suite uses several patterns to improve quality and maintainability:
 ### 1. Parameterized Tests
 
 Parameterized tests provide several benefits:
-- More comprehensive coverage with less code duplication
+- Targeted coverage of key scenarios with less code duplication
 - Clear documentation of valid/invalid inputs
 - Easier to add new test cases
 - Improved test readability
@@ -172,12 +172,13 @@ The test suite has been optimized with a focus on Podman for container testing:
 - **Consistent Patterns**: Used consistent fixture and test patterns throughout
 - **Simplified Structure**: Clear separation between container and non-container tests
 
-### 3. Functionality Focus
+### 3. Smart Functional Testing
 
 - **Value-Based Testing**: Tests focus on actual behavior rather than implementation details
-- **Better Test Coverage**: Tests cover real functionality and edge cases
+- **Strategic Test Coverage**: Tests cover real functionality and critical edge cases
 - **API-Driven Tests**: Tests verify API contracts and component interactions
 - **Real-World Scenarios**: Tests simulate actual usage patterns
+- **Quality Over Quantity**: Focus on meaningful tests that prevent regressions
 
 ### 4. Container Testing Optimization
 
@@ -197,12 +198,13 @@ The test suite has been optimized with a focus on Podman for container testing:
 
 Follow these guidelines when writing tests:
 
-### 1. Focus on Behavior, Not Implementation
+### 1. Focus on Valuable Functional Testing
 
 - Test what the function *does*, not how it *does it*
 - Define clear functional contracts for components
-- Avoid asserting on implementation specifics
+- Focus on business-critical paths and edge cases
 - Test the public API rather than internal methods
+- Prioritize tests that catch real bugs over exhaustive coverage
 
 ### 2. Use Proper Test Isolation
 
@@ -245,7 +247,7 @@ When adding new tests:
 4. Add documentation in docstrings for each test
 5. Add appropriate timeout marks to prevent tests from hanging
 6. Clean up resources in Docker and container tests
-7. Consider using parameterized tests for comprehensive coverage
+7. Consider using parameterized tests for key scenario coverage
 8. Focus on testing behavior rather than implementation details
 
 ## Warning Handling
