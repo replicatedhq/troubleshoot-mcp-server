@@ -52,7 +52,7 @@ N/A
   $ ruff check src/mcp_server_troubleshoot/bundle.py src/mcp_server_troubleshoot/server.py tests/unit/test_list_bundles.py
   All checks passed!
   
-  $ black .
+  $ ruff format .
   All done! ✨ 🍰 ✨
   20 files reformatted, 11 files left unchanged.
   ```
@@ -86,5 +86,5 @@ The bundle storage directory is typically `/data/bundles` in the container envir
 5. Updated docstrings to indicate workflow requirements
 6. Improved error messages to guide users
 7. Added comprehensive test suite to validate functionality
-8. Fixed code style issues with black and ruff
+8. Fixed code style issues with ruff format and ruff check
 9. Verified implementation passes all tests

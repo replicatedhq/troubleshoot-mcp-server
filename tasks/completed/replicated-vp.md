@@ -47,7 +47,7 @@ N/A
 ## Validation Plan
 - [x] Ensure all tests are passing (`pytest ./tests/unit/test_bundle.py`)
 - [x] Manually trigger and verify proper download with MCP Inspector from Replicated vendor portal
-- [x] Ensure linting and formatting tools pass (`ruff check .`, `black .`)
+- [x] Ensure linting and formatting tools pass (`ruff check .`, `ruff format .`)
 
 ## Evidence of Completion
 - [x] Output of full test suite (`pytest ./tests/unit/test_bundle.py` shows 25 passed)

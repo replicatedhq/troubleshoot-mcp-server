@@ -1,11 +1,12 @@
 # Fix Container Shutdown Race Condition
 
-**Status**: active  
+**Status**: completed  
 **Priority**: high  
 **Complexity**: medium  
 **Component**: lifecycle  
 **Created**: 2025-07-24  
 **Started**: 2025-07-24  
+**Completed**: 2025-07-24
 **PR**: https://github.com/chris-sanders/troubleshoot-mcp-server/pull/41  
 
 ## Problem Statement

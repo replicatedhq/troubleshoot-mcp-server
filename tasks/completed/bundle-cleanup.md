@@ -62,7 +62,7 @@ Related documentation:
 - Run unit tests to verify cleanup functionality
 - Run the full test suite to ensure no regressions (`pytest`)
 - Run linting to ensure code quality (`ruff check .`)
-- Run code formatting checks (`black . --check`)
+- Run code formatting checks (`ruff format --check .`)
 - Manually test bundle switching to ensure proper cleanup
 - Verify server shutdown results in proper cleanup
 - Check for any resource leaks using appropriate monitoring tools
