@@ -28,8 +28,14 @@ CONTAINER_RUNTIME = "podman"  # Could be "docker" if preferred
 class ContainerMCPClient:
     """MCP client that communicates with containerized server."""
 
-    def __init__(self, bundle_dir: Path, sbctl_token: str = "test-token-12345"):
+    def __init__(
+        self,
+        bundle_dir: Path,
+        image_name: str = CONTAINER_IMAGE,
+        sbctl_token: str = "test-token-12345",
+    ):
         self.bundle_dir = bundle_dir
+        self.image_name = image_name
         self.sbctl_token = sbctl_token
         self.process: Optional[asyncio.subprocess.Process] = None
         self.request_id = 0
@@ -48,7 +54,7 @@ class ContainerMCPClient:
             f"SBCTL_TOKEN={self.sbctl_token}",
             "--env",
             "MCP_BUNDLE_STORAGE=/data/bundles",
-            CONTAINER_IMAGE,
+            self.image_name,
         ]
 
         logger.info(f"Starting container: {' '.join(cmd)}")
@@ -119,6 +125,23 @@ class ContainerMCPClient:
                 f"Timeout waiting for response from container. Stderr: {stderr_data.decode()}"
             )
 
+    async def send_notification(self, method: str, params: Optional[dict] = None) -> None:
+        """Send JSON-RPC notification to container."""
+        if not self.process or not self.process.stdin:
+            raise RuntimeError("Container not started")
+
+        self.request_id += 1
+        notification = {"jsonrpc": "2.0", "method": method}
+        if params:
+            notification["params"] = params
+
+        # Send notification (no response expected)
+        notification_json = json.dumps(notification)
+        logger.debug(f"Sending notification: {notification_json}")
+
+        self.process.stdin.write((notification_json + "\n").encode())
+        await self.process.stdin.drain()
+
     async def call_tool(self, tool_name: str, arguments: dict) -> dict:
         """Call an MCP tool in the container."""
         return await self.send_request("tools/call", {"name": tool_name, "arguments": arguments})
@@ -149,21 +172,11 @@ def container_runtime_available():
 
 
 @pytest.fixture
-def container_image_available():
-    """Check if container image exists."""
-    try:
-        result = subprocess.run(
-            [CONTAINER_RUNTIME, "image", "exists", CONTAINER_IMAGE],
-            capture_output=True,
-            timeout=10,
-        )
-        if result.returncode != 0:
-            pytest.skip(
-                f"Container image {CONTAINER_IMAGE} not found. "
-                f"Build it first with: MELANGE_TEST_BUILD=true ./scripts/build.sh"
-            )
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        pytest.skip(f"Could not check for container image {CONTAINER_IMAGE}")
+def container_image_available(container_image):
+    """Ensure container image is available by using the container_image fixture."""
+    # The container_image fixture handles building the image if needed
+    # This fixture just confirms it's available
+    return container_image
 
 
 @pytest.fixture
@@ -192,7 +205,7 @@ class TestContainerBundleValidation:
         self, container_runtime_available, container_image_available, temp_bundle_dir
     ):
         """Test that the container starts and responds to basic requests."""
-        client = ContainerMCPClient(temp_bundle_dir)
+        client = ContainerMCPClient(temp_bundle_dir, container_image_available)
 
         try:
             await client.start_container()
@@ -228,13 +241,13 @@ class TestContainerBundleValidation:
         This is the key test that validates the production container can actually
         initialize bundles, which is the core functionality that users need.
         """
-        client = ContainerMCPClient(temp_bundle_dir)
+        client = ContainerMCPClient(temp_bundle_dir, container_image_available)
 
         try:
             await client.start_container()
 
             # Initialize the MCP protocol first
-            await client.send_request(
+            init_response = await client.send_request(
                 "initialize",
                 {
                     "protocolVersion": "2024-11-05",
@@ -242,6 +255,12 @@ class TestContainerBundleValidation:
                     "clientInfo": {"name": "pytest-container-test", "version": "1.0.0"},
                 },
             )
+
+            # Wait for initialization to complete and send initialized notification
+            assert "result" in init_response, f"Initialization failed: {init_response}"
+
+            # Send initialized notification to complete MCP handshake
+            await client.send_notification("notifications/initialized", {})
 
             # Now test bundle initialization - this should work in container
             bundle_path_in_container = f"/data/bundles/{test_bundle_in_dir.name}"
@@ -277,13 +296,13 @@ class TestContainerBundleValidation:
         test_bundle_in_dir,
     ):
         """Test listing bundles in container."""
-        client = ContainerMCPClient(temp_bundle_dir)
+        client = ContainerMCPClient(temp_bundle_dir, container_image_available)
 
         try:
             await client.start_container()
 
             # Initialize protocol
-            await client.send_request(
+            init_response = await client.send_request(
                 "initialize",
                 {
                     "protocolVersion": "2024-11-05",
@@ -291,6 +310,10 @@ class TestContainerBundleValidation:
                     "clientInfo": {"name": "pytest-container-test", "version": "1.0.0"},
                 },
             )
+            assert "result" in init_response, f"Initialization failed: {init_response}"
+
+            # Send initialized notification to complete MCP handshake
+            await client.send_notification("notifications/initialized", {})
 
             # List available bundles
             response = await client.call_tool("list_available_bundles", {})
@@ -323,13 +346,13 @@ class TestContainerBundleValidation:
 
         This validates the full user workflow works in the production container.
         """
-        client = ContainerMCPClient(temp_bundle_dir)
+        client = ContainerMCPClient(temp_bundle_dir, container_image_available)
 
         try:
             await client.start_container()
 
             # Initialize protocol
-            await client.send_request(
+            init_response = await client.send_request(
                 "initialize",
                 {
                     "protocolVersion": "2024-11-05",
@@ -337,6 +360,10 @@ class TestContainerBundleValidation:
                     "clientInfo": {"name": "pytest-container-test", "version": "1.0.0"},
                 },
             )
+            assert "result" in init_response, f"Initialization failed: {init_response}"
+
+            # Send initialized notification to complete MCP handshake
+            await client.send_notification("notifications/initialized", {})
 
             # Step 1: Initialize bundle
             bundle_path = f"/data/bundles/{test_bundle_in_dir.name}"
@@ -382,21 +409,25 @@ class TestContainerBuildValidation:
 
         This validates the entire build process from melange package to final image.
         """
-        # Skip in CI due to melange/apko container-in-container limitations
-        # The publish workflow already validates the build process works correctly
+        # Skip melange build test in CI - has persistent container runtime issues
+        # This test duplicates the publish workflow which works correctly
+        # All other container tests run successfully in CI
         if os.environ.get("CI") == "true":
             pytest.skip(
-                "Container build tests are skipped in CI - run locally with 'pytest -m slow'"
+                "Melange build test has persistent container runtime issues in GitHub Actions CI. "
+                "The same functionality is validated in the publish workflow. "
+                "All other container tests (9+) run successfully in CI."
             )
 
         build_script = Path("scripts/build.sh")
         if not build_script.exists():
             pytest.skip("Build script not found")
 
-        # Run the build script with test keys
+        # Run the build script using natural CI detection
         env = os.environ.copy()
-        env["MELANGE_TEST_BUILD"] = "true"
         env["IMAGE_TAG"] = "test-build"
+        # In CI: uses unsigned multi-arch builds
+        # Locally: would use MELANGE_TEST_BUILD=true for test keys
 
         try:
             result = subprocess.run(

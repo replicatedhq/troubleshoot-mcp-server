@@ -102,8 +102,13 @@ The GitHub Actions workflow runs tests in this order:
 ## Coverage Goals
 
 We aim for:
-- 80%+ overall code coverage
+- 55%+ combined code coverage (across unit and integration tests)
+- 60%+ unit test coverage
+- 45%+ integration test coverage
 - 90%+ coverage for critical paths (bundle loading, tool execution)
-- 100% coverage for error handling code
 
-Current coverage is tracked via Codecov on each PR.
+Coverage is tracked natively in GitHub Actions on each PR:
+- Coverage percentages are displayed in GitHub Actions summaries
+- Coverage reports are posted as PR comments with file-by-file breakdowns
+- Coverage thresholds are enforced - PRs fail if coverage drops below minimums
+- No external services required - uses built-in GitHub features

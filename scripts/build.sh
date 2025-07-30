@@ -11,19 +11,24 @@ set -x
 
 echo "Building with melange/apko..."
 
-# Build melange package (single arch for local development, multi-arch for CI)
-ARCH_FLAGS="--arch=amd64"
-if [[ "${CI:-false}" == "true" ]]; then
-    ARCH_FLAGS="--arch=amd64,arm64"
-fi
-
+# Determine build configuration based on environment
 echo "Building melange package..."
 
-# Determine which signing key to use based on context
+# Default configuration
+ARCH_FLAGS="--arch=amd64"
 SIGNING_KEY=""
-if [[ "${MELANGE_TEST_BUILD:-false}" == "true" ]]; then
-    echo "Using test signing key for testing..."
+APKO_IGNORE_SIGNATURES=""
+
+if [[ "${CI:-false}" == "true" ]]; then
+    echo "🏗️  CI build: single-arch, unsigned packages"
+    ARCH_FLAGS="--arch=amd64"
+    APKO_IGNORE_SIGNATURES="--ignore-signatures"
+    # No signing key in CI - build unsigned packages
+    # Note: Multi-arch builds are validated in the publish workflow
+elif [[ "${MELANGE_TEST_BUILD:-false}" == "true" ]]; then
+    echo "🧪 Local test build: single-arch, test keys"
     SIGNING_KEY="melange-test.rsa"
+    APKO_IGNORE_SIGNATURES="--ignore-signatures"
     
     # Generate test keys if they don't exist
     if [ ! -f "$SIGNING_KEY" ]; then
@@ -31,10 +36,10 @@ if [[ "${MELANGE_TEST_BUILD:-false}" == "true" ]]; then
         ./scripts/generate_test_keys.sh
     fi
 elif [ -f melange.rsa ]; then
-    echo "Using production signing key..."
+    echo "🔐 Production build: single-arch, production keys"
     SIGNING_KEY="melange.rsa"
 else
-    echo "ERROR: No signing key available!"
+    echo "❌ ERROR: No signing configuration available!"
     echo ""
     echo "For testing/development:"
     echo "  export MELANGE_TEST_BUILD=true"
@@ -47,18 +52,21 @@ else
     exit 1
 fi
 
-echo "Using signing key: $SIGNING_KEY"
-if ! podman run --rm --privileged --cap-add=SYS_ADMIN -v "$PWD":/work cgr.dev/chainguard/melange build .melange.yaml ${ARCH_FLAGS} --signing-key="$SIGNING_KEY"; then
+if [[ -n "$SIGNING_KEY" ]]; then
+    echo "Using signing key: $SIGNING_KEY"
+    MELANGE_SIGNING_ARG="--signing-key=$SIGNING_KEY"
+else
+    echo "Building unsigned packages"
+    MELANGE_SIGNING_ARG=""
+fi
+
+if ! podman run --rm --privileged --cap-add=SYS_ADMIN -v "$PWD":/work cgr.dev/chainguard/melange build .melange.yaml ${ARCH_FLAGS} ${MELANGE_SIGNING_ARG}; then
     echo "Melange build failed!"
     exit 1
 fi
 
 echo "Building apko image..."
-APKO_FLAGS="${ARCH_FLAGS}"
-if [[ "${MELANGE_TEST_BUILD:-false}" == "true" ]]; then
-    echo "Ignoring signatures for test build..."
-    APKO_FLAGS="${APKO_FLAGS} --ignore-signatures"
-fi
+APKO_FLAGS="${ARCH_FLAGS} ${APKO_IGNORE_SIGNATURES}"
 
 if ! podman run --rm --privileged --cap-add=SYS_ADMIN -v "$PWD":/work cgr.dev/chainguard/apko build apko.yaml "${IMAGE_NAME}:${IMAGE_TAG}" "${IMAGE_NAME}.tar" ${APKO_FLAGS}; then
     echo "Apko build failed!"
@@ -72,13 +80,20 @@ if ! podman load < "${IMAGE_NAME}.tar"; then
 fi
 
 # Retag the loaded image to the expected tag (apko adds architecture suffix)
-if [[ "${CI:-false}" == "false" ]]; then
-    # For local builds, retag from latest-amd64 to latest
-    echo "Retagging image for local use..."
-    if ! podman tag "${IMAGE_NAME}:latest-amd64" "${IMAGE_NAME}:${IMAGE_TAG}"; then
-        echo "Failed to retag image!"
+echo "Retagging image for local use..."
+LOADED_TAG="${IMAGE_NAME}:${IMAGE_TAG}-amd64"
+TARGET_TAG="${IMAGE_NAME}:${IMAGE_TAG}"
+
+# Check if the loaded image exists and retag it
+if podman image exists "$LOADED_TAG"; then
+    if ! podman tag "$LOADED_TAG" "$TARGET_TAG"; then
+        echo "Failed to retag image from $LOADED_TAG to $TARGET_TAG!"
         exit 1
     fi
+    echo "Successfully retagged $LOADED_TAG to $TARGET_TAG"
+else
+    echo "Warning: Expected loaded image $LOADED_TAG not found, checking available images:"
+    podman images | grep "$IMAGE_NAME" || echo "No images found with name $IMAGE_NAME"
 fi
 
 echo "✅ Melange/apko build completed successfully!"

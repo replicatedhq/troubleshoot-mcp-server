@@ -55,7 +55,10 @@ packages/
 
 # Coverage files
 .coverage
+.coverage.*
 coverage.xml
+coverage-*.xml
+*_coverage.txt
 
 # Tool caches
 .mypy_cache/
