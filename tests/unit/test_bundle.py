@@ -988,3 +988,126 @@ async def test_bundle_metadata_host_only_field():
     )
 
     assert host_only_metadata.host_only_bundle is True
+
+
+# --- 403 Retry Logic Tests ---
+
+
+@pytest.mark.asyncio
+async def test_bundle_manager_download_replicated_403_retry_success():
+    """Test that 403 errors are retried and eventually succeed."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        bundle_dir = Path(temp_dir)
+        manager = BundleManager(bundle_dir)
+
+        # Mock responses: 403, 403, then 200 success
+        responses = [
+            MagicMock(spec=httpx.Response, status_code=403, text="Forbidden"),
+            MagicMock(spec=httpx.Response, status_code=403, text="Forbidden"),
+            MagicMock(spec=httpx.Response, status_code=200),
+        ]
+
+        # Configure the successful response
+        responses[2].json.return_value = {"bundle": {"signedUri": SIGNED_URL}}
+        responses[2].json.side_effect = None
+
+        with patch("httpx.AsyncClient") as mock_client_class:
+            mock_client = mock_client_class.return_value.__aenter__.return_value
+            mock_client.get.side_effect = responses
+
+            with patch.dict(os.environ, {"SBCTL_TOKEN": "test_token"}, clear=True):
+                # This should succeed after 2 retries
+                result = await manager._get_replicated_signed_url(REPLICATED_URL)
+                assert result == SIGNED_URL
+
+                # Verify 3 API calls were made (original + 2 retries)
+                assert mock_client.get.call_count == 3
+
+
+@pytest.mark.asyncio
+async def test_bundle_manager_download_replicated_403_retry_exhausted():
+    """Test that 403 errors fail after maximum retries."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        bundle_dir = Path(temp_dir)
+        manager = BundleManager(bundle_dir)
+
+        # Mock responses: all 403 failures
+        mock_response = MagicMock(spec=httpx.Response)
+        mock_response.status_code = 403
+        mock_response.text = "Rate Limited"
+
+        with patch("httpx.AsyncClient") as mock_client_class:
+            mock_client = mock_client_class.return_value.__aenter__.return_value
+            mock_client.get.return_value = mock_response
+
+            with patch.dict(os.environ, {"SBCTL_TOKEN": "test_token"}, clear=True):
+                with pytest.raises(BundleDownloadError) as excinfo:
+                    await manager._get_replicated_signed_url(REPLICATED_URL)
+
+                # Verify error message mentions retries
+                assert "Failed to get signed URL from Replicated API after retries" in str(
+                    excinfo.value
+                )
+                assert "status 403" in str(excinfo.value)
+
+                # Verify maximum attempts were made (1 original + 3 retries)
+                assert mock_client.get.call_count == 4
+
+
+@pytest.mark.asyncio
+async def test_bundle_manager_401_404_no_retry():
+    """Test that 401 and 404 errors don't trigger retries."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        bundle_dir = Path(temp_dir)
+        manager = BundleManager(bundle_dir)
+
+        for status_code, expected_error in [
+            (401, "Failed to authenticate"),
+            (404, "Support bundle not found"),
+        ]:
+            mock_response = MagicMock(spec=httpx.Response)
+            mock_response.status_code = status_code
+            mock_response.text = "Error"
+            mock_response.json.side_effect = json.JSONDecodeError("Mock error", "", 0)
+
+            with patch("httpx.AsyncClient") as mock_client_class:
+                mock_client = mock_client_class.return_value.__aenter__.return_value
+                mock_client.get.return_value = mock_response
+
+                with patch.dict(os.environ, {"SBCTL_TOKEN": "test_token"}, clear=True):
+                    with pytest.raises(BundleDownloadError) as excinfo:
+                        await manager._get_replicated_signed_url(REPLICATED_URL)
+
+                    # Verify error message
+                    assert expected_error in str(excinfo.value)
+
+                    # Verify only one API call was made (no retries)
+                    assert mock_client.get.call_count == 1
+
+
+def test_calculate_retry_delay():
+    """Test the exponential backoff delay calculation."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        bundle_dir = Path(temp_dir)
+        manager = BundleManager(bundle_dir)
+
+        # Test delay calculation for different attempts
+        # Attempt 0: base delay (1.0) * 2^0 = 1.0, with jitter should be 0.5-1.5
+        delay_0 = manager._calculate_retry_delay(0)
+        assert 0.5 <= delay_0 <= 1.5
+
+        # Attempt 1: base delay (1.0) * 2^1 = 2.0, with jitter should be 1.0-3.0
+        delay_1 = manager._calculate_retry_delay(1)
+        assert 1.0 <= delay_1 <= 3.0
+
+        # Attempt 2: base delay (1.0) * 2^2 = 4.0, with jitter should be 2.0-6.0
+        delay_2 = manager._calculate_retry_delay(2)
+        assert 2.0 <= delay_2 <= 6.0
+
+        # Attempt 3: would be 8.0, but max is 8.0, with jitter should be 4.0-12.0
+        delay_3 = manager._calculate_retry_delay(3)
+        assert 4.0 <= delay_3 <= 12.0
+
+        # Attempt 4: should be capped at max delay (8.0)
+        delay_4 = manager._calculate_retry_delay(4)
+        assert 4.0 <= delay_4 <= 12.0  # Max delay of 8.0 with 0.5-1.5 multiplier

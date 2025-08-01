@@ -10,6 +10,7 @@ import asyncio
 import json
 import logging
 import os
+import random
 import re
 import shutil
 import signal
@@ -53,6 +54,11 @@ CLEANUP_ORPHANED = os.environ.get("SBCTL_CLEANUP_ORPHANED", "true").lower() in (
 ALLOW_ALTERNATIVE_KUBECONFIG = os.environ.get(
     "SBCTL_ALLOW_ALTERNATIVE_KUBECONFIG", "true"
 ).lower() in ("true", "1", "yes")
+
+# Retry configuration for 403 errors
+RETRY_ATTEMPTS = 3
+RETRY_BASE_DELAY = 1.0
+RETRY_MAX_DELAY = 8.0
 
 
 # Helper function for safe file copying
@@ -401,6 +407,12 @@ class BundleManager:
             logger.exception(f"Unexpected error initializing bundle: {str(e)}")
             raise BundleManagerError(f"Failed to initialize bundle: {str(e)}")
 
+    def _calculate_retry_delay(self, attempt: int) -> float:
+        """Calculate exponential backoff delay with jitter for retry attempts."""
+        delay = min(RETRY_BASE_DELAY * (2**attempt), RETRY_MAX_DELAY)
+        jitter = delay * (0.5 + random.random() * 0.5)
+        return float(jitter)
+
     async def _get_replicated_signed_url(self, original_url: str) -> str:
         """
         Get the temporary signed download URL from the Replicated Vendor Portal API.
@@ -436,9 +448,26 @@ class BundleManager:
         try:
             # === START RESTRUCTURE ===
             timeout = httpx.Timeout(MAX_DOWNLOAD_TIMEOUT)
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                logger.debug(f"Requesting signed URL from Replicated API: {api_url}")
-                response = await client.get(api_url, headers=headers)
+
+            # Retry loop for 403 errors
+            for attempt in range(RETRY_ATTEMPTS + 1):
+                async with httpx.AsyncClient(timeout=timeout) as client:
+                    logger.debug(
+                        f"Requesting signed URL from Replicated API: {api_url} (attempt {attempt + 1})"
+                    )
+                    response = await client.get(api_url, headers=headers)
+
+                # Handle 403 errors with retry logic
+                if response.status_code == 403 and attempt < RETRY_ATTEMPTS:
+                    delay = self._calculate_retry_delay(attempt)
+                    logger.warning(
+                        f"Replicated API returned 403 Forbidden for slug {slug}, retrying in {delay:.2f}s (attempt {attempt + 1}/{RETRY_ATTEMPTS + 1})"
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+
+                # Break out of retry loop for successful responses or non-retryable errors
+                break
 
             # Process the response status and content
             if response.status_code == 401:
@@ -451,6 +480,14 @@ class BundleManager:
                 logger.error(f"Replicated API returned 404 Not Found for slug {slug}")
                 raise BundleDownloadError(
                     f"Support bundle not found on Replicated Vendor Portal (slug: {slug}, status {response.status_code})."
+                )
+            elif response.status_code == 403:
+                response_text = response.text[:500]
+                logger.error(
+                    f"Replicated API returned 403 Forbidden for slug {slug} after {RETRY_ATTEMPTS + 1} attempts: {response_text}"
+                )
+                raise BundleDownloadError(
+                    f"Failed to get signed URL from Replicated API after retries (status {response.status_code}): {response_text}"
                 )
             elif response.status_code != 200:
                 response_text = response.text[:500]

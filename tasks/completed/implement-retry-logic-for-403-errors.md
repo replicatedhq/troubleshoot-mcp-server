@@ -1,9 +1,10 @@
 # Task: Implement Retry Logic with Exponential Backoff for 403 Errors
 
-**Status**: Backlog  
+**Status**: Active  
 **Priority**: High  
-**Assignee**: TBD  
+**Assignee**: Claude  
 **Created**: 2025-08-01  
+**Started**: 2025-08-01  
 
 ## Problem Statement
 
