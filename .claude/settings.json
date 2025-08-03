@@ -7,7 +7,7 @@
       "Bash(./scripts/debug_e2e.sh:*)",
       "Bash(./scripts/run_tests.sh:*)",
       "Bash(./mcp-server-troubleshoot/scripts/*)",
-      "Bash(./mcp-server-troubleshoot/src/mcp_server_troubleshoot/*)",
+      "Bash(./mcp-server-troubleshoot/src/troubleshoot_mcp_server/*)",
       "Bash(./scripts/)",
       "Bash(black:*)",
       "Bash(cat:*)",

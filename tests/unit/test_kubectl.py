@@ -9,8 +9,8 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from pydantic import ValidationError
 
-from mcp_server_troubleshoot.bundle import BundleManager, BundleMetadata
-from mcp_server_troubleshoot.kubectl import (
+from troubleshoot_mcp_server.bundle import BundleManager, BundleMetadata
+from troubleshoot_mcp_server.kubectl import (
     KubectlCommandArgs,
     KubectlError,
     KubectlExecutor,
@@ -368,7 +368,7 @@ async def test_kubectl_executor_run_kubectl_command_timeout():
         raise asyncio.TimeoutError("Command timed out")
 
     with patch(
-        "mcp_server_troubleshoot.subprocess_utils.subprocess_exec_with_cleanup",
+        "troubleshoot_mcp_server.subprocess_utils.subprocess_exec_with_cleanup",
         side_effect=mock_subprocess_timeout,
     ):
         # Execute a command with a short timeout
@@ -586,8 +586,8 @@ async def test_kubectl_executor_defaults_to_table_format():
 def test_compact_json_formatting():
     """Test that JSON formatting is compact (no indentation)."""
     import json
-    from mcp_server_troubleshoot.formatters import ResponseFormatter
-    from mcp_server_troubleshoot.kubectl import KubectlResult
+    from troubleshoot_mcp_server.formatters import ResponseFormatter
+    from troubleshoot_mcp_server.kubectl import KubectlResult
 
     # Create a sample JSON result
     result = KubectlResult(

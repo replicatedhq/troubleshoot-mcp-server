@@ -40,7 +40,7 @@ Implement much smaller defaults with neutral guidance on parameter adjustment.
 ## Implementation Plan
 
 ### Step 1: Change File Operation Defaults
-**File**: `src/mcp_server_troubleshoot/files.py` (lines 158-160)
+**File**: `src/troubleshoot_mcp_server/files.py` (lines 158-160)
 
 Change:
 ```python
@@ -56,7 +56,7 @@ max_files: int = Field(5, description="Maximum number of files to search")
 ```
 
 ### Step 2: Add Neutral Guidance Messages
-**File**: `src/mcp_server_troubleshoot/formatters.py`
+**File**: `src/troubleshoot_mcp_server/formatters.py`
 
 Add neutral parameter guidance in response messages:
 ```python
@@ -68,7 +68,7 @@ if result.files_truncated:
 ```
 
 ### Step 3: Update Tool Descriptions
-**File**: `src/mcp_server_troubleshoot/server.py` (around line 456)
+**File**: `src/troubleshoot_mcp_server/server.py` (around line 456)
 
 Update grep_files tool description to include neutral parameter explanation:
 ```python
@@ -101,13 +101,13 @@ Use specific patterns and paths to reduce noise."""
 
 ## Files to Modify
 
-1. **`src/mcp_server_troubleshoot/files.py`**
+1. **`src/troubleshoot_mcp_server/files.py`**
    - Change 3 default field values (lines 158-160)
 
-2. **`src/mcp_server_troubleshoot/formatters.py`**
+2. **`src/troubleshoot_mcp_server/formatters.py`**
    - Add neutral guidance messages for truncated results
 
-3. **`src/mcp_server_troubleshoot/server.py`**
+3. **`src/troubleshoot_mcp_server/server.py`**
    - Update grep_files tool description with parameter explanation
 
 ## Dependencies

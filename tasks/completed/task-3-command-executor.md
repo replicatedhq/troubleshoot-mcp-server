@@ -38,7 +38,7 @@ Related documentation:
 
 ## Implementation Plan
 
-1. Create a new file src/mcp_server_troubleshoot/kubectl.py to implement the Command Executor component:
+1. Create a new file src/troubleshoot_mcp_server/kubectl.py to implement the Command Executor component:
    - Define KubectlExecutor class with necessary methods
    - Implement command execution functionality
    - Add output formatting

@@ -28,7 +28,7 @@ async def test_bundle_cleanup_functional_dependency_validation():
 
     This test validates ANY missing cleanup dependencies, not just ps/pkill.
     """
-    from mcp_server_troubleshoot.bundle import BundleManager
+    from troubleshoot_mcp_server.bundle import BundleManager
 
     # Create a temporary directory for the test bundle
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -42,7 +42,7 @@ async def test_bundle_cleanup_functional_dependency_validation():
         (mock_bundle_path / "bundle.yaml").write_text("apiVersion: v1\nkind: Bundle\n")
 
         # Create a mock BundleMetadata object to simulate an active bundle
-        from mcp_server_troubleshoot.bundle import BundleMetadata
+        from troubleshoot_mcp_server.bundle import BundleMetadata
 
         mock_kubeconfig = mock_bundle_path / "kubeconfig"
         mock_kubeconfig.write_text("apiVersion: v1\nkind: Config\n")
@@ -116,7 +116,7 @@ async def test_bundle_process_cleanup_dependencies():
     This test specifically targets the cleanup code paths that originally
     used external commands (ps/pkill) for process management.
     """
-    from mcp_server_troubleshoot.bundle import BundleManager
+    from troubleshoot_mcp_server.bundle import BundleManager
 
     with tempfile.TemporaryDirectory() as temp_dir:
         bundle_manager = BundleManager(Path(temp_dir))
@@ -125,7 +125,7 @@ async def test_bundle_process_cleanup_dependencies():
         mock_bundle_path = Path(temp_dir) / "server-test-bundle"
         mock_bundle_path.mkdir(exist_ok=True)
 
-        from mcp_server_troubleshoot.bundle import BundleMetadata
+        from troubleshoot_mcp_server.bundle import BundleMetadata
 
         mock_kubeconfig = mock_bundle_path / "kubeconfig"
         mock_kubeconfig.write_text("apiVersion: v1\nkind: Config\n")
@@ -234,7 +234,7 @@ async def test_actual_container_cleanup_validation():
 
     Run with: pytest -m container tests/unit/test_bundle_cleanup_dependencies.py
     """
-    from mcp_server_troubleshoot.bundle import BundleManager
+    from troubleshoot_mcp_server.bundle import BundleManager
 
     with tempfile.TemporaryDirectory() as temp_dir:
         bundle_manager = BundleManager(Path(temp_dir))
@@ -247,7 +247,7 @@ async def test_actual_container_cleanup_validation():
         mock_kubeconfig = bundle_path / "kubeconfig"
         mock_kubeconfig.write_text("apiVersion: v1\nkind: Config\n")
 
-        from mcp_server_troubleshoot.bundle import BundleMetadata
+        from troubleshoot_mcp_server.bundle import BundleMetadata
 
         mock_metadata = BundleMetadata(
             id="container-test-bundle-789",

@@ -38,7 +38,7 @@ None (this is the first task)
    │   ├── __init__.py
    │   └── test_server.py
    └── src/
-       └── mcp_server_troubleshoot/
+       └── troubleshoot_mcp_server/
            ├── __init__.py
            ├── __main__.py
            └── server.py

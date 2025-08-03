@@ -52,7 +52,7 @@ def run_server_as_subprocess(
     test_env["PYTHONUNBUFFERED"] = "1"
 
     # Run the server module directly
-    cmd = [sys.executable, "-m", "mcp_server_troubleshoot"] + args
+    cmd = [sys.executable, "-m", "troubleshoot_mcp_server"] + args
 
     process = subprocess.Popen(
         cmd,

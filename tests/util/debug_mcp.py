@@ -17,7 +17,7 @@ def main():
     print("Starting debug MCP test")
 
     # Start the MCP server process
-    cmd = [sys.executable, "-m", "mcp_server_troubleshoot.cli", "--verbose"]
+    cmd = [sys.executable, "-m", "troubleshoot_mcp_server.cli", "--verbose"]
     print(f"Running command: {' '.join(cmd)}")
 
     env = os.environ.copy()

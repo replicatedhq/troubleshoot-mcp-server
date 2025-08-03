@@ -12,9 +12,9 @@ The new tool will help users by:
 3. Making the workflow more intuitive
 
 Related files:
-- `/src/mcp_server_troubleshoot/bundle.py` - Contains bundle manager implementation
-- `/src/mcp_server_troubleshoot/server.py` - Contains MCP tool definitions
-- `/src/mcp_server_troubleshoot/files.py` - Contains file exploration functionality
+- `/src/troubleshoot_mcp_server/bundle.py` - Contains bundle manager implementation
+- `/src/troubleshoot_mcp_server/server.py` - Contains MCP tool definitions
+- `/src/troubleshoot_mcp_server/files.py` - Contains file exploration functionality
 
 ## Success Criteria
 - [x] Create a new tool called `list_available_bundles` that scans the bundle storage directory
@@ -49,7 +49,7 @@ N/A
   $ python -m pytest
   ============================= 72 passed in 42.99s ==============================
   
-  $ ruff check src/mcp_server_troubleshoot/bundle.py src/mcp_server_troubleshoot/server.py tests/unit/test_list_bundles.py
+  $ ruff check src/troubleshoot_mcp_server/bundle.py src/troubleshoot_mcp_server/server.py tests/unit/test_list_bundles.py
   All checks passed!
   
   $ ruff format .

@@ -94,11 +94,11 @@ File A: 5 matches, File B: 5 matches, etc.
 ## Files to Modify
 
 ### Core Implementation
-- `src/mcp_server_troubleshoot/files.py`
+- `src/troubleshoot_mcp_server/files.py`
   - `GrepFilesArgs` class: Add new parameters
   - `grep_files()` method: Implement per-file and file count limiting
   
-- `src/mcp_server_troubleshoot/formatters.py`
+- `src/troubleshoot_mcp_server/formatters.py`
   - `format_grep_results()` method: Ultra-compact minimal format
 
 ### Testing

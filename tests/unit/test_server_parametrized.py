@@ -29,12 +29,12 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from mcp_server_troubleshoot.bundle import (
+from troubleshoot_mcp_server.bundle import (
     BundleManagerError,
     BundleManager,
     BundleMetadata,
 )
-from mcp_server_troubleshoot.files import (
+from troubleshoot_mcp_server.files import (
     FileContentResult,
     FileInfo,
     FileListResult,
@@ -44,8 +44,8 @@ from mcp_server_troubleshoot.files import (
     PathNotFoundError,
     FileExplorer,
 )
-from mcp_server_troubleshoot.kubectl import KubectlExecutor
-from mcp_server_troubleshoot.server import (
+from troubleshoot_mcp_server.kubectl import KubectlExecutor
+from troubleshoot_mcp_server.server import (
     initialize_bundle,
     kubectl,
     list_files,
@@ -150,7 +150,7 @@ async def test_initialize_bundle_tool_parametrized(
             bundle_manager, "check_api_server_available", new_callable=AsyncMock
         ) as mock_api,
         patch.object(bundle_manager, "get_diagnostic_info", new_callable=AsyncMock) as mock_diag,
-        patch("mcp_server_troubleshoot.server.get_bundle_manager") as mock_get_manager,
+        patch("troubleshoot_mcp_server.server.get_bundle_manager") as mock_get_manager,
     ):
         # Set up mocks for external dependencies only
         mock_sbctl.return_value = True
@@ -271,8 +271,8 @@ async def test_kubectl_tool_parametrized(
         ) as mock_api,
         patch.object(bundle_manager, "get_diagnostic_info", new_callable=AsyncMock) as mock_diag,
         patch.object(kubectl_executor, "execute", new_callable=AsyncMock) as mock_execute,
-        patch("mcp_server_troubleshoot.server.get_bundle_manager") as mock_get_manager,
-        patch("mcp_server_troubleshoot.server.get_kubectl_executor") as mock_get_executor,
+        patch("troubleshoot_mcp_server.server.get_bundle_manager") as mock_get_manager,
+        patch("troubleshoot_mcp_server.server.get_kubectl_executor") as mock_get_executor,
     ):
         # Set up mocks
         mock_api.return_value = True
@@ -282,7 +282,7 @@ async def test_kubectl_tool_parametrized(
 
         # For error cases, raise an exception
         if result_exit_code != 0:
-            from mcp_server_troubleshoot.kubectl import KubectlError
+            from troubleshoot_mcp_server.kubectl import KubectlError
 
             mock_execute.side_effect = KubectlError(
                 f"kubectl command failed: {command}", result_exit_code, ""
@@ -493,7 +493,7 @@ async def test_file_operations_parametrized(
 
     with (
         patch.object(bundle_manager, "get_active_bundle", return_value=mock_bundle),
-        patch("mcp_server_troubleshoot.server.get_file_explorer") as mock_get_explorer,
+        patch("troubleshoot_mcp_server.server.get_file_explorer") as mock_get_explorer,
     ):
         mock_get_explorer.return_value = file_explorer
 
@@ -616,7 +616,7 @@ async def test_file_operations_error_handling(
         patch.object(file_explorer, "list_files", new_callable=AsyncMock) as mock_list,
         patch.object(file_explorer, "read_file", new_callable=AsyncMock) as mock_read,
         patch.object(file_explorer, "grep_files", new_callable=AsyncMock) as mock_grep,
-        patch("mcp_server_troubleshoot.server.get_file_explorer") as mock_get_explorer,
+        patch("troubleshoot_mcp_server.server.get_file_explorer") as mock_get_explorer,
     ):
         # Set up the real file explorer instance but mock its methods to raise errors
         mock_list.side_effect = error_type(error_message)
@@ -748,7 +748,7 @@ async def test_list_available_bundles_parametrized(
     # Mock only the list_available_bundles method, keep rest of BundleManager real
     with (
         patch.object(bundle_manager, "list_available_bundles", new_callable=AsyncMock) as mock_list,
-        patch("mcp_server_troubleshoot.server.get_bundle_manager") as mock_get_manager,
+        patch("troubleshoot_mcp_server.server.get_bundle_manager") as mock_get_manager,
     ):
         mock_list.return_value = bundles
         mock_get_manager.return_value = bundle_manager
@@ -790,14 +790,14 @@ async def test_cleanup_resources(test_assertions: Any, tmp_path: Path) -> None:
 
     # Mock both app_context and legacy bundle manager access while using real instances
     with (
-        patch("mcp_server_troubleshoot.server.get_app_context") as mock_get_context,
-        patch("mcp_server_troubleshoot.server.globals") as mock_globals,
+        patch("troubleshoot_mcp_server.server.get_app_context") as mock_get_context,
+        patch("troubleshoot_mcp_server.server.globals") as mock_globals,
         patch.object(bundle_manager, "cleanup", new_callable=AsyncMock) as mock_cleanup,
     ):
         # Reset shutdown flag
-        import mcp_server_troubleshoot.server
+        import troubleshoot_mcp_server.server
 
-        mcp_server_troubleshoot.server._is_shutting_down = False
+        troubleshoot_mcp_server.server._is_shutting_down = False
 
         # Setup app context mode with real bundle manager
         mock_app_context = AsyncMock()
@@ -818,7 +818,7 @@ async def test_cleanup_resources(test_assertions: Any, tmp_path: Path) -> None:
         mock_cleanup.assert_awaited_once()
 
         # Verify shutdown flag was set
-        assert mcp_server_troubleshoot.server._is_shutting_down is True
+        assert troubleshoot_mcp_server.server._is_shutting_down is True
 
         # Reset mock
         mock_cleanup.reset_mock()
@@ -831,12 +831,12 @@ async def test_cleanup_resources(test_assertions: Any, tmp_path: Path) -> None:
 
     # Now test legacy mode with real bundle manager
     with (
-        patch("mcp_server_troubleshoot.server.get_app_context") as mock_get_context,
-        patch("mcp_server_troubleshoot.server.globals") as mock_globals,
+        patch("troubleshoot_mcp_server.server.get_app_context") as mock_get_context,
+        patch("troubleshoot_mcp_server.server.globals") as mock_globals,
         patch.object(bundle_manager, "cleanup", new_callable=AsyncMock) as mock_cleanup,
     ):
         # Reset shutdown flag
-        mcp_server_troubleshoot.server._is_shutting_down = False
+        troubleshoot_mcp_server.server._is_shutting_down = False
 
         # Setup legacy mode (no app context)
         mock_get_context.return_value = None
@@ -851,7 +851,7 @@ async def test_cleanup_resources(test_assertions: Any, tmp_path: Path) -> None:
         mock_cleanup.assert_awaited_once()
 
         # Verify shutdown flag was set
-        assert mcp_server_troubleshoot.server._is_shutting_down is True
+        assert troubleshoot_mcp_server.server._is_shutting_down is True
 
     # No manual cleanup needed - tmp_path handles it automatically
 
@@ -898,7 +898,7 @@ async def test_shutdown_function() -> None:
     with (
         patch("asyncio.get_running_loop") as mock_get_loop,
         patch("asyncio.create_task") as mock_create_task,
-        patch("mcp_server_troubleshoot.server.cleanup_resources"),
+        patch("troubleshoot_mcp_server.server.cleanup_resources"),
     ):
         mock_loop = Mock()
         mock_get_loop.return_value = mock_loop
@@ -915,7 +915,7 @@ async def test_shutdown_function() -> None:
         patch("asyncio.get_running_loop", side_effect=RuntimeError("No running loop")),
         patch("asyncio.new_event_loop") as mock_new_loop,
         patch("asyncio.set_event_loop") as mock_set_loop,
-        patch("mcp_server_troubleshoot.server.cleanup_resources"),
+        patch("troubleshoot_mcp_server.server.cleanup_resources"),
     ):
         mock_loop = Mock()
         mock_new_loop.return_value = mock_loop

@@ -13,7 +13,7 @@ import httpx
 import pytest
 from pydantic import ValidationError
 
-from mcp_server_troubleshoot.bundle import (
+from troubleshoot_mcp_server.bundle import (
     BundleDownloadError,
     BundleManager,
     BundleManagerError,

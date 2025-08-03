@@ -26,8 +26,8 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from pydantic import ValidationError
 
-from mcp_server_troubleshoot.bundle import BundleManager
-from mcp_server_troubleshoot.kubectl import (
+from troubleshoot_mcp_server.bundle import BundleManager
+from troubleshoot_mcp_server.kubectl import (
     KubectlCommandArgs,
     KubectlError,
     KubectlExecutor,
@@ -300,7 +300,7 @@ async def test_kubectl_timeout_behavior(test_assertions, test_factory):
         raise asyncio.TimeoutError("Command timed out")
 
     with patch(
-        "mcp_server_troubleshoot.subprocess_utils.subprocess_exec_with_cleanup",
+        "troubleshoot_mcp_server.subprocess_utils.subprocess_exec_with_cleanup",
         side_effect=mock_subprocess_timeout,
     ):
         with pytest.raises(KubectlError) as excinfo:

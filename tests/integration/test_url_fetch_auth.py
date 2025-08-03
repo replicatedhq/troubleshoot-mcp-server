@@ -11,8 +11,8 @@ from unittest.mock import patch, MagicMock, AsyncMock
 import httpx
 from aiohttp import ClientResponseError
 
-from mcp_server_troubleshoot.bundle import BundleManager, BundleDownloadError
-from mcp_server_troubleshoot.bundle import REPLICATED_VENDOR_URL_PATTERN
+from troubleshoot_mcp_server.bundle import BundleManager, BundleDownloadError
+from troubleshoot_mcp_server.bundle import REPLICATED_VENDOR_URL_PATTERN
 
 
 class TestUrlPatternMatching:

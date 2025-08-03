@@ -141,7 +141,7 @@ class TestFactory:
         Returns:
             BundleMetadata instance
         """
-        from mcp_server_troubleshoot.bundle import BundleMetadata
+        from troubleshoot_mcp_server.bundle import BundleMetadata
 
         if path is None:
             if tmp_path is None:
@@ -190,7 +190,7 @@ class TestFactory:
         Returns:
             KubectlResult instance
         """
-        from mcp_server_troubleshoot.kubectl import KubectlResult
+        from troubleshoot_mcp_server.kubectl import KubectlResult
 
         # Process output based on is_json
         output = stdout
@@ -271,7 +271,7 @@ def error_setup(tmp_path):
         f.write(b"\x00\x01\x02\x03")
 
     # Create a mock bundle manager that returns None for active bundle
-    from mcp_server_troubleshoot.bundle import BundleManager
+    from troubleshoot_mcp_server.bundle import BundleManager
 
     no_bundle_manager = Mock(spec=BundleManager)
     no_bundle_manager.get_active_bundle.return_value = None
@@ -297,12 +297,12 @@ def error_setup(tmp_path):
         "error_session": error_session,
         # Error classes for common exceptions in the app
         "error_classes": {
-            "BundleNotFoundError": "mcp_server_troubleshoot.bundle.BundleNotFoundError",
-            "BundleDownloadError": "mcp_server_troubleshoot.bundle.BundleDownloadError",
-            "KubectlError": "mcp_server_troubleshoot.kubectl.KubectlError",
-            "PathNotFoundError": "mcp_server_troubleshoot.files.PathNotFoundError",
-            "ReadFileError": "mcp_server_troubleshoot.files.ReadFileError",
-            "InvalidPathError": "mcp_server_troubleshoot.files.InvalidPathError",
+            "BundleNotFoundError": "troubleshoot_mcp_server.bundle.BundleNotFoundError",
+            "BundleDownloadError": "troubleshoot_mcp_server.bundle.BundleDownloadError",
+            "KubectlError": "troubleshoot_mcp_server.kubectl.KubectlError",
+            "PathNotFoundError": "troubleshoot_mcp_server.files.PathNotFoundError",
+            "ReadFileError": "troubleshoot_mcp_server.files.ReadFileError",
+            "InvalidPathError": "troubleshoot_mcp_server.files.InvalidPathError",
         },
     }
 
@@ -390,7 +390,7 @@ async def mock_bundle_manager(fixtures_dir, tmp_path):
     Returns:
         A Mock object with the BundleManager interface
     """
-    from mcp_server_troubleshoot.bundle import BundleManager, BundleMetadata
+    from troubleshoot_mcp_server.bundle import BundleManager, BundleMetadata
 
     # Create a mock bundle manager
     mock_manager = Mock(spec=BundleManager)

@@ -230,7 +230,7 @@ class MyComponent:
 Modify `server.py` to include your new component:
 
 ```python
-from mcp_server_troubleshoot.my_component import MyComponent
+from troubleshoot_mcp_server.my_component import MyComponent
 
 # In MCPServer.__init__:
 self.my_component = MyComponent(self.bundle_manager)

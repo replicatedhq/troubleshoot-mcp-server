@@ -181,8 +181,8 @@ uv run mypy src
 - `tests/unit/test_netstat_dependency.py` - Functional test triggering netstat error
 
 ### Modify:
-- `src/mcp_server_troubleshoot/subprocess_utils.py` - Fix transport cleanup
-- `src/mcp_server_troubleshoot/bundle.py:1868-1886` - Replace netstat with socket
+- `src/troubleshoot_mcp_server/subprocess_utils.py` - Fix transport cleanup
+- `src/troubleshoot_mcp_server/bundle.py:1868-1886` - Replace netstat with socket
 
 ## Testing Requirements
 

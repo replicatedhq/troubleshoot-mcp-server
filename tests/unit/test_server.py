@@ -8,12 +8,12 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from mcp.types import TextContent
 
-from mcp_server_troubleshoot.bundle import BundleMetadata, BundleManager
-from mcp_server_troubleshoot.files import (
+from troubleshoot_mcp_server.bundle import BundleMetadata, BundleManager
+from troubleshoot_mcp_server.files import (
     FileExplorer,
 )
-from mcp_server_troubleshoot.kubectl import KubectlResult, KubectlExecutor
-from mcp_server_troubleshoot.server import (
+from troubleshoot_mcp_server.kubectl import KubectlResult, KubectlExecutor
+from troubleshoot_mcp_server.server import (
     get_bundle_manager,
     get_file_explorer,
     get_kubectl_executor,
@@ -32,11 +32,11 @@ pytestmark = [pytest.mark.unit, pytest.mark.quick]
 def test_global_instances() -> None:
     """Test that the global instances are properly initialized."""
     # Reset the global instances first
-    import mcp_server_troubleshoot.server
+    import troubleshoot_mcp_server.server
 
-    mcp_server_troubleshoot.server._bundle_manager = None
-    mcp_server_troubleshoot.server._kubectl_executor = None
-    mcp_server_troubleshoot.server._file_explorer = None
+    troubleshoot_mcp_server.server._bundle_manager = None
+    troubleshoot_mcp_server.server._kubectl_executor = None
+    troubleshoot_mcp_server.server._file_explorer = None
 
     # Now get instances and check they're created
     bundle_manager = get_bundle_manager()
@@ -88,7 +88,7 @@ async def test_initialize_bundle_tool(tmp_path: Path) -> None:
             bundle_manager, "check_api_server_available", new_callable=AsyncMock
         ) as mock_api,
         patch.object(bundle_manager, "get_diagnostic_info", new_callable=AsyncMock) as mock_diag,
-        patch("mcp_server_troubleshoot.server.get_bundle_manager") as mock_get_manager,
+        patch("troubleshoot_mcp_server.server.get_bundle_manager") as mock_get_manager,
     ):
         # Set up mocks for external dependencies only
         mock_sbctl.return_value = True
@@ -162,8 +162,8 @@ async def test_kubectl_tool(tmp_path: Path) -> None:
                 bundle_manager, "check_api_server_available", new_callable=AsyncMock
             ) as mock_api,
             patch.object(kubectl_executor, "execute", new_callable=AsyncMock) as mock_execute,
-            patch("mcp_server_troubleshoot.server.get_bundle_manager") as mock_get_manager,
-            patch("mcp_server_troubleshoot.server.get_kubectl_executor") as mock_get_executor,
+            patch("troubleshoot_mcp_server.server.get_bundle_manager") as mock_get_manager,
+            patch("troubleshoot_mcp_server.server.get_kubectl_executor") as mock_get_executor,
         ):
             # Set up mocks for external dependencies only
             mock_api.return_value = True
@@ -223,7 +223,7 @@ async def test_kubectl_tool_host_only_bundle(tmp_path: Path) -> None:
 
         with (
             patch.object(bundle_manager, "get_active_bundle", return_value=mock_bundle),
-            patch("mcp_server_troubleshoot.server.get_bundle_manager") as mock_get_manager,
+            patch("troubleshoot_mcp_server.server.get_bundle_manager") as mock_get_manager,
         ):
             mock_get_manager.return_value = bundle_manager
 
@@ -285,7 +285,7 @@ async def test_file_operations(tmp_path: Path) -> None:
 
         with (
             patch.object(bundle_manager, "get_active_bundle", return_value=mock_bundle),
-            patch("mcp_server_troubleshoot.server.get_file_explorer") as mock_get_explorer,
+            patch("troubleshoot_mcp_server.server.get_file_explorer") as mock_get_explorer,
         ):
             mock_get_explorer.return_value = file_explorer
 
@@ -346,7 +346,7 @@ def test_mcp_configuration() -> None:
 
     # For FastMCP, we can just verify that our functions exist in the module
     # The @mcp.tool() decorator registers the functions with the FastMCP instance
-    from mcp_server_troubleshoot.server import (
+    from troubleshoot_mcp_server.server import (
         initialize_bundle,
         kubectl,
         list_files,

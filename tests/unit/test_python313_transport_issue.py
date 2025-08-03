@@ -32,7 +32,7 @@ async def test_subprocess_transport_cleanup_triggers_error():
 
     # For this TDD test, we'll demonstrate the issue by showing that the current
     # subprocess_utils doesn't have explicit Python 3.13 transport handling
-    from mcp_server_troubleshoot import subprocess_utils
+    from troubleshoot_mcp_server import subprocess_utils
     import inspect
 
     # Check if subprocess_utils has Python 3.13 specific handling
@@ -66,7 +66,7 @@ async def test_subprocess_transport_cleanup_triggers_error():
 
     try:
         # Use the current subprocess_utils extensively
-        from mcp_server_troubleshoot.subprocess_utils import (
+        from troubleshoot_mcp_server.subprocess_utils import (
             subprocess_exec_with_cleanup,
         )
 
@@ -125,7 +125,7 @@ async def test_subprocess_utils_transport_cleanup_with_python313():
     if sys.version_info < (3, 13):
         pytest.skip("This test is specifically for Python 3.13+ transport issue")
 
-    from mcp_server_troubleshoot.subprocess_utils import subprocess_exec_with_cleanup
+    from troubleshoot_mcp_server.subprocess_utils import subprocess_exec_with_cleanup
 
     # Capture any transport cleanup errors
     original_filters = warnings.filters.copy()

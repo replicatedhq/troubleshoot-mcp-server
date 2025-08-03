@@ -11,7 +11,7 @@ import warnings
 
 import pytest
 
-from mcp_server_troubleshoot.subprocess_utils import (
+from troubleshoot_mcp_server.subprocess_utils import (
     subprocess_exec_with_cleanup,
     subprocess_shell_with_cleanup,
 )

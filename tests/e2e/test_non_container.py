@@ -14,69 +14,69 @@ pytestmark = [pytest.mark.e2e]  # Intentionally not using container marker
 def test_package_installation():
     """Test that the package is properly installed and importable."""
     try:
-        import mcp_server_troubleshoot
+        import troubleshoot_mcp_server
 
-        assert hasattr(mcp_server_troubleshoot, "__version__")
+        assert hasattr(troubleshoot_mcp_server, "__version__")
     except ImportError:
-        pytest.fail("Failed to import mcp_server_troubleshoot package")
+        pytest.fail("Failed to import troubleshoot_mcp_server package")
 
 
 def test_cli_module_exists():
     """Test that the CLI module exists."""
     try:
-        from mcp_server_troubleshoot import cli
+        from troubleshoot_mcp_server import cli
 
         assert callable(getattr(cli, "main", None)), "CLI module does not have a main function"
     except ImportError:
-        pytest.fail("Failed to import mcp_server_troubleshoot.cli module")
+        pytest.fail("Failed to import troubleshoot_mcp_server.cli module")
 
 
 def test_bundle_module_exists():
     """Test that the bundle module exists."""
     try:
-        from mcp_server_troubleshoot import bundle
+        from troubleshoot_mcp_server import bundle
 
         assert hasattr(bundle, "BundleManager"), "Bundle module does not have BundleManager class"
     except ImportError:
-        pytest.fail("Failed to import mcp_server_troubleshoot.bundle module")
+        pytest.fail("Failed to import troubleshoot_mcp_server.bundle module")
 
 
 def test_files_module_exists():
     """Test that the files module exists."""
     try:
-        from mcp_server_troubleshoot import files
+        from troubleshoot_mcp_server import files
 
         assert hasattr(files, "FileExplorer"), "Files module does not have FileExplorer class"
     except ImportError:
-        pytest.fail("Failed to import mcp_server_troubleshoot.files module")
+        pytest.fail("Failed to import troubleshoot_mcp_server.files module")
 
 
 def test_kubectl_module_exists():
     """Test that the kubectl module exists."""
     try:
-        from mcp_server_troubleshoot import kubectl
+        from troubleshoot_mcp_server import kubectl
 
         assert hasattr(kubectl, "KubectlExecutor"), (
             "Kubectl module does not have KubectlExecutor class"
         )
     except ImportError:
-        pytest.fail("Failed to import mcp_server_troubleshoot.kubectl module")
+        pytest.fail("Failed to import troubleshoot_mcp_server.kubectl module")
 
 
 def test_server_module_exists():
     """Test that the server module exists."""
     try:
-        from mcp_server_troubleshoot import server
+        from troubleshoot_mcp_server import server
 
         assert hasattr(server, "mcp"), "Server module does not have mcp object"
     except ImportError:
-        pytest.fail("Failed to import mcp_server_troubleshoot.server module")
+        pytest.fail("Failed to import troubleshoot_mcp_server.server module")
 
 
 def test_configuration_loading():
     """Test that configuration can be loaded."""
     try:
-        from mcp_server_troubleshoot import config
+        from troubleshoot_mcp_server import config
 
         # Create a test config
         test_config = {
@@ -103,7 +103,7 @@ def test_configuration_loading():
 def test_cli_help():
     """Test that the CLI can be run with --help."""
     result = subprocess.run(
-        [sys.executable, "-m", "mcp_server_troubleshoot.cli", "--help"],
+        [sys.executable, "-m", "troubleshoot_mcp_server.cli", "--help"],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
@@ -116,7 +116,7 @@ def test_cli_help():
 def test_version_command():
     """Test that the version command works."""
     result = subprocess.run(
-        [sys.executable, "-m", "mcp_server_troubleshoot.cli", "--version"],
+        [sys.executable, "-m", "troubleshoot_mcp_server.cli", "--version"],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
@@ -132,9 +132,9 @@ def test_version_command():
 async def test_simple_api_initialization():
     """Test that the API components can be initialized."""
     try:
-        from mcp_server_troubleshoot.bundle import BundleManager
-        from mcp_server_troubleshoot.files import FileExplorer
-        from mcp_server_troubleshoot.kubectl import KubectlExecutor
+        from troubleshoot_mcp_server.bundle import BundleManager
+        from troubleshoot_mcp_server.files import FileExplorer
+        from troubleshoot_mcp_server.kubectl import KubectlExecutor
         from pathlib import Path
 
         # Create bundle manager first

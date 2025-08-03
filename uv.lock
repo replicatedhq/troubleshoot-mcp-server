@@ -870,6 +870,7 @@ dev = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "ruff" },
     { name = "types-psutil" },
 ]
 
@@ -894,7 +895,10 @@ requires-dist = [
 provides-extras = ["dev"]
 
 [package.metadata.requires-dev]
-dev = [{ name = "types-psutil", specifier = ">=7.0.0.20250601" }]
+dev = [
+    { name = "ruff", specifier = ">=0.12.5" },
+    { name = "types-psutil", specifier = ">=7.0.0.20250601" },
+]
 
 [[package]]
 name = "typer"

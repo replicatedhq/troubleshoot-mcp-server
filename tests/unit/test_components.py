@@ -42,7 +42,7 @@ async def test_bundle_initialization(mock_command_environment, fixtures_dir):
         mock_command_environment: Fixture that provides a test environment with mock binaries
         fixtures_dir: Fixture that provides the path to test fixtures
     """
-    from mcp_server_troubleshoot.bundle import BundleManager
+    from troubleshoot_mcp_server.bundle import BundleManager
 
     logger.info("Testing bundle initialization")
 
@@ -102,8 +102,8 @@ async def test_kubectl_execution(mock_command_environment, fixtures_dir):
         mock_command_environment: Fixture that provides a test environment with mock binaries
         fixtures_dir: Fixture that provides the path to test fixtures
     """
-    from mcp_server_troubleshoot.bundle import BundleManager
-    from mcp_server_troubleshoot.kubectl import KubectlExecutor
+    from troubleshoot_mcp_server.bundle import BundleManager
+    from troubleshoot_mcp_server.kubectl import KubectlExecutor
 
     logger.info("Testing kubectl execution")
 
@@ -178,8 +178,8 @@ async def test_file_explorer_behavior(test_file_setup):
         test_file_setup: Fixture that provides a test directory with files
     """
     from unittest.mock import Mock
-    from mcp_server_troubleshoot.bundle import BundleManager, BundleMetadata
-    from mcp_server_troubleshoot.files import FileExplorer
+    from troubleshoot_mcp_server.bundle import BundleManager, BundleMetadata
+    from troubleshoot_mcp_server.files import FileExplorer
 
     logger.info("Testing file explorer with simplified setup")
 

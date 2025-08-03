@@ -324,7 +324,7 @@ pytest_markers = [
 1. **Phase 3 URL**: Use https://vendor.replicated.com/troubleshoot/analyze/2025-06-18@16:39 for URL fetch testing.
 
 2. **Read existing code first**:
-   - Review `src/mcp_server_troubleshoot/server.py` to understand MCP tool implementations
+   - Review `src/troubleshoot_mcp_server/server.py` to understand MCP tool implementations
    - Check `tests/integration/test_real_bundle.py` for existing bundle testing patterns
    - Look at `tests/fixtures/` for available test bundles
 
@@ -340,7 +340,7 @@ pytest_markers = [
 4. **For Phase 1 specifically**:
    - The MCP server uses stdio transport (stdin/stdout)
    - JSON-RPC 2.0 format is required
-   - Server is started with: `python -m mcp_server_troubleshoot`
+   - Server is started with: `python -m troubleshoot_mcp_server`
    - Look for FastMCP documentation for protocol details
 
 ### Handoff Guidelines

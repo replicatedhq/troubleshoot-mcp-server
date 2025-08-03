@@ -38,7 +38,7 @@ from pathlib import Path
 # Add the src directory to path to import our modules
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
-from mcp_server_troubleshoot.lifecycle import handle_signal, is_shutdown_requested
+from troubleshoot_mcp_server.lifecycle import handle_signal, is_shutdown_requested
 
 # Set up logging
 logging.basicConfig(
@@ -193,7 +193,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
-from mcp_server_troubleshoot.lifecycle import handle_signal, setup_signal_handlers, is_shutdown_requested
+from troubleshoot_mcp_server.lifecycle import handle_signal, setup_signal_handlers, is_shutdown_requested
 
 logging.basicConfig(level=logging.INFO, stream=sys.stderr)
 logger = logging.getLogger(__name__)
@@ -283,7 +283,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
-from mcp_server_troubleshoot.lifecycle import handle_signal, setup_signal_handlers, is_shutdown_requested
+from troubleshoot_mcp_server.lifecycle import handle_signal, setup_signal_handlers, is_shutdown_requested
 
 logging.basicConfig(level=logging.DEBUG, stream=sys.stderr)
 logger = logging.getLogger(__name__)
@@ -340,7 +340,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
-from mcp_server_troubleshoot.lifecycle import handle_signal, is_shutdown_requested
+from troubleshoot_mcp_server.lifecycle import handle_signal, is_shutdown_requested
 
 logging.basicConfig(level=logging.INFO, stream=sys.stderr)
 logger = logging.getLogger(__name__)

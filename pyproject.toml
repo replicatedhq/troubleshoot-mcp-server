@@ -40,13 +40,13 @@ dev = [
 where = ["src"]
 
 [tool.setuptools.package-data]
-mcp_server_troubleshoot = ["py.typed"]
+troubleshoot_mcp_server = ["py.typed"]
 
 [project.scripts]
-troubleshoot-mcp-server = "mcp_server_troubleshoot.__main__:main"
+troubleshoot-mcp-server = "troubleshoot_mcp_server.__main__:main"
 
 [project.entry-points.console_scripts]
-troubleshoot-mcp-server-serve = "mcp_server_troubleshoot.cli:main"
+troubleshoot-mcp-server-serve = "troubleshoot_mcp_server.cli:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -91,5 +91,6 @@ disallow_incomplete_defs = true
 
 [dependency-groups]
 dev = [
+    "ruff>=0.12.5",
     "types-psutil>=7.0.0.20250601",
 ]

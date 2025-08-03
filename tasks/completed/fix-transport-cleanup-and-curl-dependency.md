@@ -78,7 +78,7 @@ Work in parallel to maximize efficiency and reduce total implementation time.
    - Preserve timeout behavior (currently 3.0 seconds)
 
 2. **Implement Proper Transport Cleanup**
-   - Create `src/mcp_server_troubleshoot/subprocess_utils.py` with cleanup utilities
+   - Create `src/troubleshoot_mcp_server/subprocess_utils.py` with cleanup utilities
    - Add explicit transport cleanup for all subprocess operations
    - Implement context managers for subprocess lifecycle management
    - Update existing subprocess calls in `bundle.py` and `kubectl.py`
@@ -101,11 +101,11 @@ Work in parallel to maximize efficiency and reduce total implementation time.
 - `tests/unit/test_transport_cleanup_reproduction.py`: Reproduction tests for transport issues
 - `tests/unit/test_curl_dependency_reproduction.py`: Reproduction tests for curl dependency
 - `tests/unit/test_transport_cleanup.py`: Comprehensive transport cleanup tests
-- `src/mcp_server_troubleshoot/subprocess_utils.py`: Subprocess lifecycle utilities
+- `src/troubleshoot_mcp_server/subprocess_utils.py`: Subprocess lifecycle utilities
 
 ### Files to Modify:
-- `src/mcp_server_troubleshoot/bundle.py`: Replace curl with aiohttp, enhance cleanup
-- `src/mcp_server_troubleshoot/kubectl.py`: Add explicit transport cleanup
+- `src/troubleshoot_mcp_server/bundle.py`: Replace curl with aiohttp, enhance cleanup
+- `src/troubleshoot_mcp_server/kubectl.py`: Add explicit transport cleanup
 - `tests/unit/test_bundle.py`: Add transport cleanup test coverage
 - `tests/unit/test_kubectl.py`: Add subprocess lifecycle test coverage
 

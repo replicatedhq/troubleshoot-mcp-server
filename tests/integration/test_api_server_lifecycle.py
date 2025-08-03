@@ -14,8 +14,8 @@ from typing import Dict, Any
 import pytest
 import pytest_asyncio
 
-from mcp_server_troubleshoot.bundle import BundleManager, BundleManagerError
-from mcp_server_troubleshoot.kubectl import KubectlExecutor
+from troubleshoot_mcp_server.bundle import BundleManager, BundleManagerError
+from troubleshoot_mcp_server.kubectl import KubectlExecutor
 
 
 class TestAPIServerLifecycle:

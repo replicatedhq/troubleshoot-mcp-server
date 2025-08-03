@@ -16,7 +16,7 @@ The current `read_file` implementation returns entire file content by default, c
 - [ ] Updated tool documentation reflecting new parameters
 
 ## Dependencies
-- Existing `read_file` implementation in `src/mcp_server_troubleshoot/files.py`
+- Existing `read_file` implementation in `src/troubleshoot_mcp_server/files.py`
 - `ReadFileArgs` model needs updating
 - `FileContentResult` model needs updating
 

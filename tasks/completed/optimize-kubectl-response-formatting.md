@@ -21,26 +21,26 @@ The system is returning `kubectl get pods -o json` (full API objects) instead of
 - [ ] Preserve JSON functionality for programmatic use when needed
 
 ## Dependencies
-- `src/mcp_server_troubleshoot/formatters.py` - Response formatting logic
-- `src/mcp_server_troubleshoot/kubectl.py` - kubectl execution and JSON output defaults
-- `src/mcp_server_troubleshoot/server.py` - Tool parameter handling
+- `src/troubleshoot_mcp_server/formatters.py` - Response formatting logic
+- `src/troubleshoot_mcp_server/kubectl.py` - kubectl execution and JSON output defaults
+- `src/troubleshoot_mcp_server/server.py` - Tool parameter handling
 - `tests/conftest.py` - Default verbosity configuration
 
 ## Implementation Plan
 
 ### 1. Fix Default Output Format (CRITICAL)
-- **File**: `src/mcp_server_troubleshoot/kubectl.py:47`
+- **File**: `src/troubleshoot_mcp_server/kubectl.py:47`
 - **Change**: `json_output: bool = Field(False, ...)` - Disable JSON by default
 - **Impact**: Return normal CLI tables instead of full API objects
 - **Token Reduction**: 90%+ reduction (160k → ~1-2k tokens)
 
 ### 2. Remove Automatic JSON Injection
-- **File**: `src/mcp_server_troubleshoot/kubectl.py:177-178`
+- **File**: `src/troubleshoot_mcp_server/kubectl.py:177-178`
 - **Current**: Automatically adds `-o json` when `json_output=True`
 - **Keep**: Logic but ensure it's only used when explicitly requested
 
 ### 3. Implement Compact JSON for Programmatic Use
-- **File**: `src/mcp_server_troubleshoot/formatters.py:339`
+- **File**: `src/troubleshoot_mcp_server/formatters.py:339`
 - **Change**: Remove `indent=2` from `json.dumps(result.output, indent=2)`
 - **Use**: `json.dumps(result.output)` for compact JSON (no whitespace)
 - **Rationale**: JSON output is for programmatic use, not human reading
@@ -52,7 +52,7 @@ The system is returning `kubectl get pods -o json` (full API objects) instead of
 - **Add**: Clear separation between test and production verbosity defaults
 
 ### 5. Streamline Metadata
-- **File**: `src/mcp_server_troubleshoot/formatters.py:345-357`
+- **File**: `src/troubleshoot_mcp_server/formatters.py:345-357`
 - **Change**: Reduce metadata bloat in responses
 - **Keep**: Only essential information unless debug mode explicitly requested
 
@@ -129,8 +129,8 @@ Based on investigation findings:
 ## Evidence of Completion
 - [x] **Token reduction measured**: 86.2% reduction (426 → 59 tokens) for typical kubectl get pods output
 - [x] **Files modified with specific changes**:
-  - `src/mcp_server_troubleshoot/kubectl.py:47` - Changed `json_output` default from `True` to `False`
-  - `src/mcp_server_troubleshoot/formatters.py:339` - Removed `indent=2` from JSON formatting for compact output
+  - `src/troubleshoot_mcp_server/kubectl.py:47` - Changed `json_output` default from `True` to `False`
+  - `src/troubleshoot_mcp_server/formatters.py:339` - Removed `indent=2` from JSON formatting for compact output
   - `tests/unit/test_kubectl.py:30` - Updated test for new default value
   - `tests/unit/test_kubectl.py:375-528` - Added comprehensive test suite covering:
     - Default CLI format behavior

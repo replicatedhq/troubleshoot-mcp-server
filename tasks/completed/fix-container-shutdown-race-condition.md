@@ -39,7 +39,7 @@ Python runtime state: finalizing (tstate=0x00007fffff750df0)
 ### Phase 2: Signal Handler Fix
 **Objective**: Eliminate race condition in signal handling
 
-**File**: `src/mcp_server_troubleshoot/lifecycle.py` (lines 173-226)
+**File**: `src/troubleshoot_mcp_server/lifecycle.py` (lines 173-226)
 **Changes**:
 - Remove `sys.exit(0)` from signal handler
 - Use asyncio-safe shutdown mechanism instead
@@ -49,7 +49,7 @@ Python runtime state: finalizing (tstate=0x00007fffff750df0)
 ### Phase 3: Shutdown Coordination
 **Objective**: Add signal-safe shutdown coordination
 
-**File**: `src/mcp_server_troubleshoot/server.py` (around line 536)
+**File**: `src/troubleshoot_mcp_server/server.py` (around line 536)
 **Changes**:
 - Add signal-safe shutdown flag coordination
 - Ensure proper cleanup sequence completion before exit
@@ -105,8 +105,8 @@ def handle_signal(signum: int, frame: Any) -> None:
 3. `tests/e2e/test_container_shutdown_reliability.py` - End-to-end validation
 
 ### Modify:
-1. `src/mcp_server_troubleshoot/lifecycle.py:173-226` - Fix signal handler race condition
-2. `src/mcp_server_troubleshoot/server.py:530-550` - Add shutdown coordination
+1. `src/troubleshoot_mcp_server/lifecycle.py:173-226` - Fix signal handler race condition
+2. `src/troubleshoot_mcp_server/server.py:530-550` - Add shutdown coordination
 
 ## Testing Strategy
 

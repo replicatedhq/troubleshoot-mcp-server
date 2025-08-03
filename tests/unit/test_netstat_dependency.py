@@ -23,7 +23,7 @@ async def test_bundle_api_check_without_netstat():
 
     DO NOT mock the error - this test must actually cause the subprocess to fail.
     """
-    from mcp_server_troubleshoot.subprocess_utils import subprocess_exec_with_cleanup
+    from troubleshoot_mcp_server.subprocess_utils import subprocess_exec_with_cleanup
 
     # Save the original PATH
     original_path = os.environ.get("PATH", "")
@@ -105,7 +105,7 @@ async def test_bundle_network_diagnostic_triggers_netstat_error():
 
         # The bundle.py code uses netstat in network diagnostic checks
         # Let's manually call the subprocess that would be used
-        from mcp_server_troubleshoot.subprocess_utils import (
+        from troubleshoot_mcp_server.subprocess_utils import (
             subprocess_exec_with_cleanup,
         )
 
@@ -163,7 +163,7 @@ async def test_port_checking_functionality_without_netstat():
         os.environ["PATH"] = "/tmp"  # Path that definitely won't have netstat
 
         # First, demonstrate that the current netstat approach fails
-        from mcp_server_troubleshoot.subprocess_utils import (
+        from troubleshoot_mcp_server.subprocess_utils import (
             subprocess_exec_with_cleanup,
         )
 

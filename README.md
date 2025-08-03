@@ -55,7 +55,7 @@ export SBCTL_TOKEN=your-token
 4. Run the server using UV:
 
 ```bash
-uv run python -m mcp_server_troubleshoot
+uv run python -m troubleshoot_mcp_server
 ```
 
 ## Container Image Variants
@@ -162,7 +162,7 @@ AI models can interact with the server using the MCP protocol:
 │   ├── build.sh               # Podman build script
 │   └── run.sh                 # Podman run script
 ├── src/                       # Source code
-│   └── mcp_server_troubleshoot/
+│   └── troubleshoot_mcp_server/
 │       ├── __init__.py
 │       ├── __main__.py        # Entry point
 │       ├── bundle.py          # Bundle management

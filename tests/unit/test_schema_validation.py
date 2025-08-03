@@ -9,7 +9,7 @@ import json
 
 import pytest
 
-from mcp_server_troubleshoot.server import mcp
+from troubleshoot_mcp_server.server import mcp
 
 
 # Mark all tests in this file as unit tests and quick tests

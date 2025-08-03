@@ -25,7 +25,7 @@ async def test_transport_cleanup_fix_integration():
     if sys.version_info < (3, 13):
         pytest.skip("This test is specifically for Python 3.13+ transport fix verification")
 
-    from mcp_server_troubleshoot.subprocess_utils import subprocess_exec_with_cleanup
+    from troubleshoot_mcp_server.subprocess_utils import subprocess_exec_with_cleanup
 
     # Capture any transport-related warnings or errors
     transport_issues = []
@@ -70,7 +70,7 @@ async def test_socket_port_checking_fix_integration():
     Integration test that verifies the socket-based port checking
     replaces netstat dependency correctly.
     """
-    from mcp_server_troubleshoot.bundle import BundleManager
+    from troubleshoot_mcp_server.bundle import BundleManager
 
     # Create a BundleManager instance to test the port checking
     bundle_manager = BundleManager()
@@ -97,7 +97,7 @@ async def test_netstat_replaced_in_diagnostic_info():
     Test that the diagnostic info function no longer depends on netstat
     and uses Python sockets instead.
     """
-    from mcp_server_troubleshoot.bundle import BundleManager
+    from troubleshoot_mcp_server.bundle import BundleManager
 
     # Save original PATH
     original_path = os.environ.get("PATH", "")
@@ -156,8 +156,8 @@ async def test_both_fixes_work_together():
     if sys.version_info < (3, 13):
         pytest.skip("This test requires Python 3.13+ for complete fix verification")
 
-    from mcp_server_troubleshoot.bundle import BundleManager
-    from mcp_server_troubleshoot.subprocess_utils import subprocess_exec_with_cleanup
+    from troubleshoot_mcp_server.bundle import BundleManager
+    from troubleshoot_mcp_server.subprocess_utils import subprocess_exec_with_cleanup
 
     # Capture any issues
     transport_issues = []
@@ -231,7 +231,7 @@ def test_fixes_are_properly_implemented():
     Test that verifies the fixes are properly implemented in the codebase.
     """
     # Check subprocess_utils has Python 3.13 handling
-    from mcp_server_troubleshoot import subprocess_utils
+    from troubleshoot_mcp_server import subprocess_utils
     import inspect
 
     source = inspect.getsource(subprocess_utils)
@@ -242,7 +242,7 @@ def test_fixes_are_properly_implemented():
     assert "_safe_transport_wait_close" in source, "Should have safe transport wait function"
 
     # Check bundle.py has socket-based port checking
-    from mcp_server_troubleshoot import bundle
+    from troubleshoot_mcp_server import bundle
 
     bundle_source = inspect.getsource(bundle)
 

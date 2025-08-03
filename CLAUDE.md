@@ -186,7 +186,7 @@ gh repo view --web              # Open repo in browser
 ./scripts/setup_env.sh --force-recreate
 
 # Verify installation  
-uv run python -c "import mcp_server_troubleshoot"
+uv run python -c "import troubleshoot_mcp_server"
 ```
 
 ### Worktree Issues

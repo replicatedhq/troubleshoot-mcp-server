@@ -37,7 +37,7 @@ Related documentation:
 
 ## Implementation Plan
 
-1. Create a new file src/mcp_server_troubleshoot/files.py to implement the File Explorer component:
+1. Create a new file src/troubleshoot_mcp_server/files.py to implement the File Explorer component:
    - Define FileOperations class with necessary methods
    - Implement directory listing functionality
    - Implement file reading with line range filtering

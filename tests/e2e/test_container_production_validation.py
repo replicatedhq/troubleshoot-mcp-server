@@ -182,7 +182,7 @@ import sys
 sys.path.insert(0, '/usr/lib/python3.13/site-packages')
 
 async def test_sbctl_check():
-    from mcp_server_troubleshoot.bundle import BundleManager
+    from troubleshoot_mcp_server.bundle import BundleManager
     from pathlib import Path
     
     # Create bundle manager

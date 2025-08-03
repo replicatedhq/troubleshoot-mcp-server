@@ -7,7 +7,7 @@ Covers core functionality without excessive redundancy.
 
 import os
 import pytest
-from mcp_server_troubleshoot.size_limiter import SizeLimiter
+from troubleshoot_mcp_server.size_limiter import SizeLimiter
 
 # Mark all tests in this file as unit tests
 pytestmark = pytest.mark.unit
@@ -201,7 +201,7 @@ def test_size_limiter_factory_function():
     """
     Test the get_size_limiter factory function.
     """
-    from mcp_server_troubleshoot.size_limiter import get_size_limiter
+    from troubleshoot_mcp_server.size_limiter import get_size_limiter
 
     # Test with custom limit
     limiter = get_size_limiter(token_limit=10000)

@@ -79,7 +79,7 @@ with patch("subprocess.run", return_value=MagicMock(returncode=0, stdout="", std
 
 - `pyproject.toml` - Add psutil dependency
 - `.melange.yaml` - Add py3-psutil package  
-- `src/mcp_server_troubleshoot/bundle.py` - Replace 4 subprocess calls with psutil
+- `src/troubleshoot_mcp_server/bundle.py` - Replace 4 subprocess calls with psutil
 - `tests/unit/test_ps_pkill_dependency.py` - New test to catch missing commands
 
 ## Development Instructions

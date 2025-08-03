@@ -39,7 +39,7 @@ Related documentation:
 
 ## Implementation Plan
 
-1. Create a new file src/mcp_server_troubleshoot/bundle.py to implement the Bundle Manager component:
+1. Create a new file src/troubleshoot_mcp_server/bundle.py to implement the Bundle Manager component:
    - Define BundleManager class with necessary methods
    - Implement bundle download functionality
    - Implement sbctl integration

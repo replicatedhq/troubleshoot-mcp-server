@@ -52,7 +52,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import aiohttp
 import pytest
 
-from mcp_server_troubleshoot.bundle import BundleManager, BundleMetadata
+from troubleshoot_mcp_server.bundle import BundleManager, BundleMetadata
 from tests.test_utils.bundle_helpers import TempBundleManager, create_minimal_kubeconfig
 
 # Mark all tests in this file as unit tests
@@ -400,7 +400,7 @@ async def test_curl_dependency_eliminated_functional():
     This test uses actual subprocess operations instead of complex mocking
     to verify that the subprocess utilities work correctly.
     """
-    from mcp_server_troubleshoot.subprocess_utils import subprocess_exec_with_cleanup
+    from troubleshoot_mcp_server.subprocess_utils import subprocess_exec_with_cleanup
 
     # Test 1: Basic subprocess operations work
     returncode, stdout, stderr = await subprocess_exec_with_cleanup(

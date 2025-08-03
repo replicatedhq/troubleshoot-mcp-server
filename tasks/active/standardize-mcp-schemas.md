@@ -91,7 +91,7 @@ Target tool call format:
 ### Phase 2: Core Implementation (Sequential with Parallel Testing)
 
 #### Sub-task 2A: Update Tool Function Signatures
-**Location**: `src/mcp_server_troubleshoot/server.py`
+**Location**: `src/troubleshoot_mcp_server/server.py`
 
 Transform each tool function from:
 ```python

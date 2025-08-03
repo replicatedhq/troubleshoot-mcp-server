@@ -9,7 +9,7 @@ import pytest
 def test_config_provides_recommended_defaults():
     """Test that the config module provides recommended defaults."""
     # Import the config module directly
-    from mcp_server_troubleshoot.config import get_recommended_client_config
+    from troubleshoot_mcp_server.config import get_recommended_client_config
 
     # Get the recommended configuration
     config = get_recommended_client_config()

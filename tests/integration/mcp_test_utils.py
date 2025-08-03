@@ -61,7 +61,7 @@ class MCPTestClient:
             server_env["MCP_BUNDLE_STORAGE"] = str(self.bundle_dir)
 
         # Start the MCP server process
-        cmd = [sys.executable, "-m", "mcp_server_troubleshoot"]
+        cmd = [sys.executable, "-m", "troubleshoot_mcp_server"]
         logger.info(f"Starting MCP server with command: {cmd}")
 
         try:

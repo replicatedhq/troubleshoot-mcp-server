@@ -75,7 +75,7 @@ mock_executor.execute = AsyncMock(return_value=mock_result)
 
 **Pattern:**
 ```python
-with patch("mcp_server_troubleshoot.server.get_bundle_manager") as mock_get_manager:
+with patch("troubleshoot_mcp_server.server.get_bundle_manager") as mock_get_manager:
     mock_manager = Mock()
     mock_manager._check_sbctl_available = AsyncMock(return_value=True)
 ```

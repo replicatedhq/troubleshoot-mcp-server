@@ -8,8 +8,8 @@ import pytest
 from pathlib import Path
 from unittest.mock import Mock
 
-from mcp_server_troubleshoot.bundle import BundleManager, BundleMetadata
-from mcp_server_troubleshoot.files import FileExplorer
+from troubleshoot_mcp_server.bundle import BundleManager, BundleMetadata
+from troubleshoot_mcp_server.files import FileExplorer
 
 # Mark all tests in this file as unit tests
 pytestmark = pytest.mark.unit

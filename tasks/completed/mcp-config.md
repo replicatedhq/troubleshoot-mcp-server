@@ -25,7 +25,7 @@ Today to configure an MCP client many values must be setup for the docker run co
         "python",
         "mcp-server-troubleshoot:latest",
         "-m",
-        "mcp_server_troubleshoot.cli"
+        "troubleshoot_mcp_server.cli"
       ]
     }
   }

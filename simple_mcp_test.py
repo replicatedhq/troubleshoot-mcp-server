@@ -26,7 +26,7 @@ def test_mcp_server():
         }
 
         # Start server
-        cmd = [sys.executable, "-m", "mcp_server_troubleshoot"]
+        cmd = [sys.executable, "-m", "troubleshoot_mcp_server"]
         print(f"Starting: {' '.join(cmd)}")
 
         try:

@@ -22,7 +22,7 @@ from pathlib import Path
 import pytest
 import pytest_asyncio
 
-from mcp_server_troubleshoot.server import (
+from troubleshoot_mcp_server.server import (
     initialize_bundle,
     list_available_bundles,
     list_files,

@@ -15,8 +15,8 @@ import pytest
 import pytest_asyncio
 
 # Import components for testing
-from mcp_server_troubleshoot.bundle import BundleManager
-from mcp_server_troubleshoot.files import FileExplorer
+from troubleshoot_mcp_server.bundle import BundleManager
+from troubleshoot_mcp_server.files import FileExplorer
 
 # Mark all tests in this file as integration tests
 pytestmark = pytest.mark.integration

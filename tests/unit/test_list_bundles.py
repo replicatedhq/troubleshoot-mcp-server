@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from mcp_server_troubleshoot.bundle import BundleManager
+from troubleshoot_mcp_server.bundle import BundleManager
 
 
 @pytest.fixture

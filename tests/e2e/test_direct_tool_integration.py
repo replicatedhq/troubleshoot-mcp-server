@@ -12,7 +12,7 @@ import asyncio
 import os
 from pathlib import Path
 
-from src.mcp_server_troubleshoot.server import (
+from src.troubleshoot_mcp_server.server import (
     initialize_bundle,
     list_available_bundles,
     list_files,

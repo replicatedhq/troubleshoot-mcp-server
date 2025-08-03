@@ -42,14 +42,14 @@ Users need a way to get helpful guidance when responses are too large, with spec
 ### Phase 1: Core Infrastructure - **PARALLEL DEVELOPMENT**
 
 **Sub-Agent A**: Core Size Limiting Module
-- Create `src/mcp_server_troubleshoot/size_limiter.py`
+- Create `src/troubleshoot_mcp_server/size_limiter.py`
 - Implement `SizeLimiter` class with token estimation methods
 - Fast character-based token approximation (~4 chars per token)
 - Configurable limits via environment variables
 - Content size checking and overflow detection
 
 **Sub-Agent B**: Formatter Extensions (can work in parallel)
-- Extend `src/mcp_server_troubleshoot/formatters.py`
+- Extend `src/troubleshoot_mcp_server/formatters.py`
 - Add `format_overflow_message()` method to `ResponseFormatter`
 - Include content preview/summary capabilities
 - Respect existing verbosity levels in overflow messages
@@ -82,7 +82,7 @@ Users need a way to get helpful guidance when responses are too large, with spec
 ### Phase 3: Server Integration - **COORDINATED DEVELOPMENT**
 
 **Primary Agent**: Server Response Wrapping
-- Modify `src/mcp_server_troubleshoot/server.py`
+- Modify `src/troubleshoot_mcp_server/server.py`
 - Create single centralized `check_response_size()` wrapper function
 - Apply wrapper to all existing MCP tools at response return point
 - Coordinate with sub-agents' completed components
@@ -118,12 +118,12 @@ Users need a way to get helpful guidance when responses are too large, with spec
 - Final validation of all acceptance criteria
 
 ## Files to Create
-- `src/mcp_server_troubleshoot/size_limiter.py` - Core size limiting functionality
+- `src/troubleshoot_mcp_server/size_limiter.py` - Core size limiting functionality
 - `tests/unit/test_size_limiter.py` - Unit tests for size limiter
 
 ## Files to Modify
-- `src/mcp_server_troubleshoot/server.py` - Add size limiting to all tool responses
-- `src/mcp_server_troubleshoot/formatters.py` - Add overflow message formatting
+- `src/troubleshoot_mcp_server/server.py` - Add size limiting to all tool responses
+- `src/troubleshoot_mcp_server/formatters.py` - Add overflow message formatting
 - Existing test files - Update to verify size limiting behavior
 
 ## Dependencies

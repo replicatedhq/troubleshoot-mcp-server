@@ -41,7 +41,7 @@ This task is well-suited for parallel development with multiple sub-agents:
 ## Implementation Plan
 
 ### 1. Create Host Command Discovery Module
-**File**: `src/mcp_server_troubleshoot/host_commands.py`
+**File**: `src/troubleshoot_mcp_server/host_commands.py`
 
 ```python
 class HostCommandInfo(BaseModel):
@@ -68,7 +68,7 @@ class HostCommandDiscovery:
 ```
 
 ### 2. Add MCP Tools
-**File**: `src/mcp_server_troubleshoot/server.py`
+**File**: `src/troubleshoot_mcp_server/server.py`
 
 Add two new MCP tools:
 - `list_host_commands` - Returns list of available host commands
@@ -111,7 +111,7 @@ Sub-agents can work in parallel on these independent components:
 
 ### 5. File Structure
 ```
-src/mcp_server_troubleshoot/
+src/troubleshoot_mcp_server/
 ├── host_commands.py          # New: Host command discovery
 ├── server.py                 # Modified: Add new MCP tools
 └── ...existing files...

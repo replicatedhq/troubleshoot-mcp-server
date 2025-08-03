@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from mcp_server_troubleshoot.lifecycle import (
+from troubleshoot_mcp_server.lifecycle import (
     app_lifespan,
     create_temp_directory,
     periodic_bundle_cleanup,
@@ -142,7 +142,7 @@ async def test_bundle_manager_cleanup_called():
     mock_server.use_stdio = True
 
     # Create a test context with a mock bundle manager from the start
-    with patch("mcp_server_troubleshoot.lifecycle.BundleManager") as BundleManagerMock:
+    with patch("troubleshoot_mcp_server.lifecycle.BundleManager") as BundleManagerMock:
         # Create a mock bundle manager instance
         mock_bundle_manager = AsyncMock()
         BundleManagerMock.return_value = mock_bundle_manager

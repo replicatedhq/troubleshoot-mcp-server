@@ -14,15 +14,15 @@ import pytest
 
 from mcp.server.fastmcp import FastMCP
 
-from mcp_server_troubleshoot.lifecycle import (
+from troubleshoot_mcp_server.lifecycle import (
     app_lifespan,
     AppContext,
     create_temp_directory,
     periodic_bundle_cleanup,
     setup_signal_handlers,
 )
-from mcp_server_troubleshoot.bundle import BundleManager
-from mcp_server_troubleshoot.server import (
+from troubleshoot_mcp_server.bundle import BundleManager
+from troubleshoot_mcp_server.server import (
     get_app_context,
     set_app_context,
     cleanup_resources,

@@ -53,7 +53,7 @@ From investigation of `bundle.py:444-462`:
 ## Implementation Details
 
 ### Files to Modify
-1. **`src/mcp_server_troubleshoot/bundle.py`**:
+1. **`src/troubleshoot_mcp_server/bundle.py`**:
    - Add 3 retry constants at module level
    - Add `_calculate_retry_delay` helper (~5 lines)
    - Modify `_get_replicated_signed_url` with retry loop (~25 lines)

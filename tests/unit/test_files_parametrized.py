@@ -24,8 +24,8 @@ from unittest.mock import Mock
 import pytest
 from pydantic import ValidationError
 
-from mcp_server_troubleshoot.bundle import BundleManager, BundleMetadata
-from mcp_server_troubleshoot.files import (
+from troubleshoot_mcp_server.bundle import BundleManager, BundleMetadata
+from troubleshoot_mcp_server.files import (
     FileContentResult,
     FileExplorer,
     FileListResult,

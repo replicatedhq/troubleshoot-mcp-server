@@ -131,7 +131,7 @@ jobs:
           
           # Test 3: MCP server must be able to start
           echo "Testing MCP server startup..."
-          timeout 10 podman run --rm --entrypoint python3 ${IMAGE_NAME}:${VERSION} -m mcp_server_troubleshoot --help | head -5
+          timeout 10 podman run --rm --entrypoint python3 ${IMAGE_NAME}:${VERSION} -m troubleshoot_mcp_server --help | head -5
           
           echo "✅ Container validation passed - safe to publish"
       

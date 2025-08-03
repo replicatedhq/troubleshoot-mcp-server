@@ -679,7 +679,7 @@ async def test_demonstrate_transport_cleanup_fix_success():
     This test creates subprocess operations similar to the MCP server patterns
     and verifies that no transport cleanup warnings or errors occur.
     """
-    from mcp_server_troubleshoot.subprocess_utils import subprocess_exec_with_cleanup
+    from troubleshoot_mcp_server.subprocess_utils import subprocess_exec_with_cleanup
 
     # Track any warnings that occur during the test
     transport_warnings = []
