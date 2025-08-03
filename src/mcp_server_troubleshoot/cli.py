@@ -102,7 +102,7 @@ def handle_version() -> None:
     """Output version information."""
     from mcp_server_troubleshoot import __version__
 
-    print(f"mcp-server-troubleshoot version {__version__}")
+    print(f"troubleshoot-mcp-server version {__version__}")
     sys.exit(0)
 
 

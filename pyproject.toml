@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "mcp-server-troubleshoot"
+name = "troubleshoot-mcp-server"
 version = "0.1.0"
 description = "MCP server for Kubernetes support bundles"
 requires-python = ">=3.13"
@@ -43,10 +43,10 @@ where = ["src"]
 mcp_server_troubleshoot = ["py.typed"]
 
 [project.scripts]
-mcp-server-troubleshoot = "mcp_server_troubleshoot.__main__:main"
+troubleshoot-mcp-server = "mcp_server_troubleshoot.__main__:main"
 
 [project.entry-points.console_scripts]
-mcp-server-troubleshoot-serve = "mcp_server_troubleshoot.cli:main"
+troubleshoot-mcp-server-serve = "mcp_server_troubleshoot.cli:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -76,7 +76,7 @@ To build the container locally:
 ./scripts/build.sh
 
 # Or directly with Podman
-podman build -t mcp-server-troubleshoot:latest -f Containerfile .
+podman build -t troubleshoot-mcp-server:latest -f Containerfile .
 ```
 
 ## Adding New Workflows

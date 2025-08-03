@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.13"
 
 [[package]]
@@ -352,60 +352,6 @@ sdist = { url = "https://files.pythonhosted.org/packages/66/85/f36d538b1286b7758
 wheels = [
     { url = "https://files.pythonhosted.org/packages/2f/cf/3fd38cfe43962452e4bfadc6966b2ea0afaf8e0286cb3991c247c8c33ebd/mcp-1.12.2-py3-none-any.whl", hash = "sha256:b86d584bb60193a42bd78aef01882c5c42d614e416cbf0480149839377ab5a5f", size = 158473, upload-time = "2025-07-24T18:29:03.419Z" },
 ]
-
-[[package]]
-name = "mcp-server-troubleshoot"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "aiohttp" },
-    { name = "fastapi" },
-    { name = "mcp" },
-    { name = "psutil" },
-    { name = "pydantic" },
-    { name = "pyyaml" },
-    { name = "typer" },
-    { name = "uvicorn" },
-]
-
-[package.optional-dependencies]
-dev = [
-    { name = "mypy" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "pytest-cov" },
-    { name = "pytest-timeout" },
-    { name = "ruff" },
-    { name = "types-pyyaml" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "types-psutil" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "aiohttp" },
-    { name = "fastapi" },
-    { name = "mcp" },
-    { name = "mypy", marker = "extra == 'dev'" },
-    { name = "psutil" },
-    { name = "pydantic" },
-    { name = "pytest", marker = "extra == 'dev'" },
-    { name = "pytest-asyncio", marker = "extra == 'dev'" },
-    { name = "pytest-cov", marker = "extra == 'dev'" },
-    { name = "pytest-timeout", marker = "extra == 'dev'" },
-    { name = "pyyaml" },
-    { name = "ruff", marker = "extra == 'dev'" },
-    { name = "typer" },
-    { name = "types-pyyaml", marker = "extra == 'dev'" },
-    { name = "uvicorn" },
-]
-provides-extras = ["dev"]
-
-[package.metadata.requires-dev]
-dev = [{ name = "types-psutil", specifier = ">=7.0.0.20250601" }]
 
 [[package]]
 name = "mdurl"
@@ -895,6 +841,60 @@ sdist = { url = "https://files.pythonhosted.org/packages/04/57/d062573f391d06271
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f7/1f/b876b1f83aef204198a42dc101613fefccb32258e5428b5f9259677864b4/starlette-0.47.2-py3-none-any.whl", hash = "sha256:c5847e96134e5c5371ee9fac6fdf1a67336d5815e09eb2a01fdb57a351ef915b", size = 72984, upload-time = "2025-07-20T17:31:56.738Z" },
 ]
+
+[[package]]
+name = "troubleshoot-mcp-server"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "aiohttp" },
+    { name = "fastapi" },
+    { name = "mcp" },
+    { name = "psutil" },
+    { name = "pydantic" },
+    { name = "pyyaml" },
+    { name = "typer" },
+    { name = "uvicorn" },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "mypy" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
+    { name = "pytest-timeout" },
+    { name = "ruff" },
+    { name = "types-pyyaml" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "types-psutil" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "aiohttp" },
+    { name = "fastapi" },
+    { name = "mcp" },
+    { name = "mypy", marker = "extra == 'dev'" },
+    { name = "psutil" },
+    { name = "pydantic" },
+    { name = "pytest", marker = "extra == 'dev'" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'" },
+    { name = "pytest-cov", marker = "extra == 'dev'" },
+    { name = "pytest-timeout", marker = "extra == 'dev'" },
+    { name = "pyyaml" },
+    { name = "ruff", marker = "extra == 'dev'" },
+    { name = "typer" },
+    { name = "types-pyyaml", marker = "extra == 'dev'" },
+    { name = "uvicorn" },
+]
+provides-extras = ["dev"]
+
+[package.metadata.requires-dev]
+dev = [{ name = "types-psutil", specifier = ">=7.0.0.20250601" }]
 
 [[package]]
 name = "typer"

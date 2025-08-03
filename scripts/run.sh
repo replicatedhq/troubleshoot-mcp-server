@@ -2,7 +2,7 @@
 set -e
 
 # Configuration
-IMAGE_NAME="mcp-server-troubleshoot"
+IMAGE_NAME="troubleshoot-mcp-server"
 IMAGE_TAG="latest"
 BUNDLE_DIR="$(pwd)/tests/fixtures"
 INTERACTIVE="-i"  # Default is MCP mode (-i)

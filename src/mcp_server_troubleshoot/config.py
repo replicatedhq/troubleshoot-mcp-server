@@ -40,7 +40,7 @@ def get_recommended_client_config() -> Dict[str, Any]:
                     "${HOME}/bundles:/data/bundles",
                     "-e",
                     "SBCTL_TOKEN=${SBCTL_TOKEN}",
-                    "mcp-server-troubleshoot:latest",
+                    "troubleshoot-mcp-server:latest",
                 ],
             }
         }

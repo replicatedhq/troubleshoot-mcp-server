@@ -188,8 +188,8 @@ For development, install the package in editable mode with development dependenc
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/mcp-server-troubleshoot.git
-cd mcp-server-troubleshoot
+git clone https://github.com/your-username/troubleshoot-mcp-server.git
+cd troubleshoot-mcp-server
 
 # Set up the development environment using UV
 ./scripts/setup_env.sh
