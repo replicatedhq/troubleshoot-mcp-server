@@ -1111,3 +1111,233 @@ def test_calculate_retry_delay():
         # Attempt 4: should be capped at max delay (8.0)
         delay_4 = manager._calculate_retry_delay(4)
         assert 4.0 <= delay_4 <= 12.0  # Max delay of 8.0 with 0.5-1.5 multiplier
+
+
+class TestGitHubUrlPatterns:
+    """Test GitHub URL pattern detection."""
+
+    def test_github_attachment_url_pattern(self):
+        """Test GitHub attachment URL matching."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            bundle_dir = Path(temp_dir)
+            manager = BundleManager(bundle_dir)
+
+            # Test valid GitHub attachment URLs
+            valid_urls = [
+                "https://github.com/user-attachments/files/12345/bundle.tar.gz",
+                "https://github.com/user-attachments/files/67890/support-bundle.tgz",
+                "https://github.com/user-attachments/files/111111/my-bundle-2023.tar.gz",
+                "https://github.com/user-attachments/files/999999/bundle",
+            ]
+
+            for url in valid_urls:
+                assert manager._is_github_url(url), f"Should match GitHub attachment URL: {url}"
+
+    def test_github_release_url_pattern(self):
+        """Test GitHub release URL matching."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            bundle_dir = Path(temp_dir)
+            manager = BundleManager(bundle_dir)
+
+            # Test valid GitHub release URLs
+            valid_urls = [
+                "https://github.com/owner/repo/releases/download/v1.0.0/bundle.tar.gz",
+                "https://github.com/my-org/my-repo/releases/download/release-1.2.3/support-bundle.tgz",
+                "https://github.com/user/project/releases/download/latest/bundle.zip",
+            ]
+
+            for url in valid_urls:
+                assert manager._is_github_url(url), f"Should match GitHub release URL: {url}"
+
+    def test_github_raw_url_pattern(self):
+        """Test GitHub raw content URL matching."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            bundle_dir = Path(temp_dir)
+            manager = BundleManager(bundle_dir)
+
+            # Test valid GitHub raw URLs
+            valid_urls = [
+                "https://raw.githubusercontent.com/owner/repo/main/bundle.tar.gz",
+                "https://raw.githubusercontent.com/user/project/branch/path/file.tgz",
+                "https://raw.githubusercontent.com/org/repo/commit-hash/data/bundle.zip",
+            ]
+
+            for url in valid_urls:
+                assert manager._is_github_url(url), f"Should match GitHub raw URL: {url}"
+
+    def test_non_github_urls(self):
+        """Test that non-GitHub URLs are not matched."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            bundle_dir = Path(temp_dir)
+            manager = BundleManager(bundle_dir)
+
+            # Test non-GitHub URLs that should not match
+            non_github_urls = [
+                "https://example.com/bundle.tar.gz",
+                "https://vendor.replicated.com/troubleshoot/analyze/my-slug",
+                "https://gitlab.com/user/repo/uploads/bundle.tar.gz",
+                "https://bitbucket.org/user/repo/downloads/bundle.tar.gz",
+                "http://github.com/user/repo/bundle.tar.gz",  # HTTP not HTTPS
+                "https://github.com/user/repo/blob/main/bundle.tar.gz",  # Blob URL, not attachment
+                "https://gist.github.com/user/123456/bundle.tar.gz",  # Gist URL
+            ]
+
+            for url in non_github_urls:
+                assert not manager._is_github_url(url), f"Should not match non-GitHub URL: {url}"
+
+
+class TestGitHubAuthentication:
+    """Test GitHub authentication handling."""
+
+    @pytest.mark.asyncio
+    async def test_github_token_priority(self):
+        """Test token selection priority: GITHUB_TOKEN > GH_TOKEN > SBCTL_TOKEN."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            bundle_dir = Path(temp_dir)
+            manager = BundleManager(bundle_dir)
+
+            test_url = "https://github.com/user-attachments/files/12345/bundle.tar.gz"
+
+            # Mock successful aiohttp response
+            mock_response = MagicMock()
+            mock_response.status = 200
+            mock_response.content_length = 1000
+
+            # Create async iterator for content chunks
+            async def async_iterator():
+                yield b"test content"
+
+            mock_content = MagicMock()
+            mock_content.iter_chunked = MagicMock(return_value=async_iterator())
+            mock_response.content = mock_content
+
+            # Setup mock aiohttp response
+            mock_response.__aenter__ = AsyncMock()
+            mock_response.__aenter__.return_value = mock_response
+            mock_response.__aexit__ = AsyncMock(return_value=None)
+
+            # Mock the session's get method returning the response directly (not as a coroutine)
+            mock_aio_session = AsyncMock(spec=aiohttp.ClientSession)
+            mock_aio_session.get = MagicMock(return_value=mock_response)
+            mock_aio_session.__aenter__.return_value = mock_aio_session
+            mock_aio_session.__aexit__ = AsyncMock(return_value=None)
+
+            with patch("aiohttp.ClientSession", return_value=mock_aio_session):
+                # Test GITHUB_TOKEN has highest priority
+                with patch.dict(
+                    os.environ,
+                    {
+                        "GITHUB_TOKEN": "github_token",
+                        "GH_TOKEN": "gh_token",
+                        "SBCTL_TOKEN": "sbctl_token",
+                    },
+                    clear=True,
+                ):
+                    await manager._download_github_attachment(test_url)
+
+                    # Verify the call was made with GITHUB_TOKEN
+                    call_args = mock_aio_session.get.call_args
+                    assert call_args[1]["headers"]["Authorization"] == "token github_token"
+
+                # Test GH_TOKEN when GITHUB_TOKEN not available
+                with patch.dict(
+                    os.environ, {"GH_TOKEN": "gh_token", "SBCTL_TOKEN": "sbctl_token"}, clear=True
+                ):
+                    await manager._download_github_attachment(test_url)
+
+                    # Verify the call was made with GH_TOKEN
+                    call_args = mock_aio_session.get.call_args
+                    assert call_args[1]["headers"]["Authorization"] == "token gh_token"
+
+                # Test SBCTL_TOKEN when neither GITHUB_TOKEN nor GH_TOKEN available
+                with patch.dict(os.environ, {"SBCTL_TOKEN": "sbctl_token"}, clear=True):
+                    await manager._download_github_attachment(test_url)
+
+                    # Verify the call was made with SBCTL_TOKEN
+                    call_args = mock_aio_session.get.call_args
+                    assert call_args[1]["headers"]["Authorization"] == "token sbctl_token"
+
+    @pytest.mark.asyncio
+    async def test_missing_token_error(self):
+        """Test error when no token is available."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            bundle_dir = Path(temp_dir)
+            manager = BundleManager(bundle_dir)
+
+            test_url = "https://github.com/user-attachments/files/12345/bundle.tar.gz"
+
+            # Clear all possible token environment variables
+            with patch.dict(os.environ, {}, clear=True):
+                with pytest.raises(BundleDownloadError) as excinfo:
+                    await manager._download_github_attachment(test_url)
+
+                assert "No authentication token found" in str(excinfo.value)
+                assert "GITHUB_TOKEN" in str(excinfo.value)
+
+    @pytest.mark.asyncio
+    async def test_github_error_responses(self):
+        """Test handling of various GitHub error responses."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            bundle_dir = Path(temp_dir)
+            manager = BundleManager(bundle_dir)
+
+            test_url = "https://github.com/user-attachments/files/12345/bundle.tar.gz"
+
+            error_scenarios = [
+                (401, "GitHub authentication failed"),
+                (404, "GitHub resource not found"),
+                (429, "GitHub rate limit exceeded"),
+                (500, "Failed to download from GitHub: HTTP 500"),
+            ]
+
+            for status_code, expected_error_msg in error_scenarios:
+                mock_response = MagicMock()
+                mock_response.status = status_code
+                mock_response.reason = "Test Error"
+
+                # Setup mock aiohttp response
+                mock_response.__aenter__ = AsyncMock()
+                mock_response.__aenter__.return_value = mock_response
+                mock_response.__aexit__ = AsyncMock(return_value=None)
+
+                # Mock the session's get method returning the response directly (not as a coroutine)
+                mock_aio_session = AsyncMock(spec=aiohttp.ClientSession)
+                mock_aio_session.get = MagicMock(return_value=mock_response)
+                mock_aio_session.__aenter__.return_value = mock_aio_session
+                mock_aio_session.__aexit__ = AsyncMock(return_value=None)
+
+                with patch("aiohttp.ClientSession", return_value=mock_aio_session):
+                    with patch.dict(os.environ, {"GITHUB_TOKEN": "test_token"}, clear=True):
+                        with pytest.raises(BundleDownloadError) as excinfo:
+                            await manager._download_github_attachment(test_url)
+
+                        assert expected_error_msg in str(excinfo.value)
+
+
+class TestGitHubDownloadIntegration:
+    """Test GitHub download routing in main _download_bundle method."""
+
+    @pytest.mark.asyncio
+    async def test_github_url_routing(self):
+        """Test that GitHub URLs are routed to _download_github_attachment."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            bundle_dir = Path(temp_dir)
+            manager = BundleManager(bundle_dir)
+
+            github_urls = [
+                "https://github.com/user-attachments/files/12345/bundle.tar.gz",
+                "https://github.com/owner/repo/releases/download/v1.0/bundle.tar.gz",
+                "https://raw.githubusercontent.com/user/repo/main/bundle.tar.gz",
+            ]
+
+            for url in github_urls:
+                with patch.object(manager, "_download_github_attachment") as mock_github_download:
+                    mock_github_download.return_value = Path("/fake/path/bundle.tar.gz")
+
+                    result = await manager._download_bundle(url)
+
+                    # Verify GitHub method was called
+                    mock_github_download.assert_called_once_with(url)
+                    assert result == Path("/fake/path/bundle.tar.gz")
+
+                    mock_github_download.reset_mock()

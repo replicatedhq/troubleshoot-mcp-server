@@ -95,6 +95,11 @@ REPLICATED_VENDOR_URL_PATTERN = re.compile(
 # Ensure there is NO space between 'v' and '3'
 REPLICATED_API_ENDPOINT = "https://api.replicated.com/vendor/v3/supportbundle/{slug}"
 
+# GitHub URL patterns for attachment downloads
+GITHUB_ATTACHMENT_URL_PATTERN = re.compile(r"https://github\.com/user-attachments/files/\d+/.+")
+GITHUB_RELEASE_URL_PATTERN = re.compile(r"https://github\.com/[^/]+/[^/]+/releases/download/.+")
+GITHUB_RAW_URL_PATTERN = re.compile(r"https://raw\.githubusercontent\.com/.+")
+
 
 class BundleMetadata(BaseModel):
     """
@@ -413,6 +418,14 @@ class BundleManager:
         jitter = delay * (0.5 + random.random() * 0.5)
         return float(jitter)
 
+    def _is_github_url(self, url: str) -> bool:
+        """Check if the URL is a GitHub URL that requires special authentication."""
+        return bool(
+            GITHUB_ATTACHMENT_URL_PATTERN.match(url)
+            or GITHUB_RELEASE_URL_PATTERN.match(url)
+            or GITHUB_RAW_URL_PATTERN.match(url)
+        )
+
     async def _get_replicated_signed_url(self, original_url: str) -> str:
         """
         Get the temporary signed download URL from the Replicated Vendor Portal API.
@@ -563,9 +576,135 @@ class BundleManager:
                 raise BundleDownloadError(distinct_error_msg) from e
             # === END CONSOLIDATED EXCEPTION HANDLING ===
 
+    async def _download_github_attachment(self, url: str) -> Path:
+        """
+        Download bundle from GitHub with proper authentication.
+
+        Args:
+            url: GitHub URL to download from
+
+        Returns:
+            The path to the downloaded bundle
+
+        Raises:
+            BundleDownloadError: If the bundle could not be downloaded
+        """
+        # Token priority: GITHUB_TOKEN > GH_TOKEN > SBCTL_TOKEN
+        github_token = (
+            os.environ.get("GITHUB_TOKEN")
+            or os.environ.get("GH_TOKEN")
+            or os.environ.get("SBCTL_TOKEN")
+        )
+
+        if not github_token:
+            raise BundleDownloadError(
+                "Cannot download from GitHub: No authentication token found. "
+                "Set GITHUB_TOKEN, GH_TOKEN, or SBCTL_TOKEN environment variable."
+            )
+
+        # GitHub-specific headers
+        headers = {
+            "Authorization": f"token {github_token}",
+            "Accept": "application/vnd.github.v3+json",
+            "User-Agent": "troubleshoot-mcp-server",
+        }
+
+        # Generate filename
+        parsed_url = urlparse(url)
+        filename = (
+            os.path.basename(parsed_url.path)
+            or f"github_bundle_{self._generate_bundle_id(url)}.tar.gz"
+        )
+        # Ensure filename is safe
+        filename = re.sub(r"[^\w\-.]", "_", filename)
+        if not filename:
+            filename = f"github_bundle_{self._generate_bundle_id(url)}.tar.gz"
+
+        download_path = self.bundle_dir / filename
+
+        # Use retry logic similar to Replicated downloads for rate limits
+        max_retries = 3
+        for attempt in range(max_retries + 1):
+            try:
+                timeout = aiohttp.ClientTimeout(total=MAX_DOWNLOAD_TIMEOUT)
+
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.get(url, headers=headers) as response:
+                        if response.status == 429:  # Rate limited
+                            if attempt < max_retries:
+                                delay = self._calculate_retry_delay(attempt)
+                                logger.warning(
+                                    f"GitHub rate limit hit, retrying in {delay:.1f}s (attempt {attempt + 1}/{max_retries + 1})"
+                                )
+                                await asyncio.sleep(delay)
+                                continue
+                            else:
+                                raise BundleDownloadError(
+                                    "GitHub rate limit exceeded. Please try again later or check your token limits."
+                                )
+
+                        if response.status == 401:
+                            raise BundleDownloadError(
+                                "GitHub authentication failed. Please check your token has the correct permissions."
+                            )
+
+                        if response.status == 404:
+                            raise BundleDownloadError(
+                                f"GitHub resource not found: {url}. Check the URL and token permissions."
+                            )
+
+                        if response.status != 200:
+                            reason = response.reason or "Unknown Error"
+                            raise BundleDownloadError(
+                                f"Failed to download from GitHub: HTTP {response.status} {reason}"
+                            )
+
+                        # Check content length if available
+                        content_length = response.content_length
+                        if content_length and content_length > MAX_DOWNLOAD_SIZE:
+                            raise BundleDownloadError(
+                                f"Bundle size ({content_length} bytes) exceeds maximum allowed size ({MAX_DOWNLOAD_SIZE} bytes)"
+                            )
+
+                        # Download the file
+                        total_downloaded = 0
+                        with open(download_path, "wb") as f:
+                            async for chunk in response.content.iter_chunked(8192):
+                                f.write(chunk)
+                                total_downloaded += len(chunk)
+                                if total_downloaded > MAX_DOWNLOAD_SIZE:
+                                    raise BundleDownloadError(
+                                        f"Bundle size exceeds maximum allowed size ({MAX_DOWNLOAD_SIZE} bytes)"
+                                    )
+
+                        logger.info(
+                            f"Successfully downloaded GitHub bundle to {download_path} ({total_downloaded} bytes)"
+                        )
+                        return download_path
+
+            except aiohttp.ClientError as e:
+                if attempt < max_retries:
+                    delay = self._calculate_retry_delay(attempt)
+                    logger.warning(
+                        f"Network error downloading from GitHub, retrying in {delay:.1f}s: {e}"
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                else:
+                    raise BundleDownloadError(f"Network error downloading from GitHub: {e}")
+            except BundleDownloadError:
+                # Re-raise our own errors without retrying
+                raise
+            except Exception as e:
+                logger.exception(f"Unexpected error downloading from GitHub: {e}")
+                raise BundleDownloadError(f"Unexpected error downloading from GitHub: {e}")
+
+        # This should not be reached, but add as safety
+        raise BundleDownloadError("Failed to download from GitHub after all retries")
+
     async def _download_bundle(self, url: str) -> Path:
         """
-        Download a support bundle from a URL, handling Replicated Vendor Portal URLs.
+        Download a support bundle from a URL, handling Replicated Vendor Portal and GitHub URLs.
 
         Args:
             url: The URL to download the bundle from (can be original or signed)
@@ -579,6 +718,10 @@ class BundleManager:
         # Initialize actual_download_url with the original URL first
         actual_download_url = url
         original_url = url  # Keep track of the original URL for logging/ID generation
+
+        # Check if it's a GitHub URL that requires special authentication
+        if self._is_github_url(url):
+            return await self._download_github_attachment(url)
 
         # Check if it's a Replicated Vendor Portal URL
         if REPLICATED_VENDOR_URL_PATTERN.match(url):

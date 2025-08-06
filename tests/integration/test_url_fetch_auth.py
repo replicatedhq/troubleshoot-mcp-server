@@ -270,3 +270,153 @@ class TestRealTokenAuthentication:
             # When neither is set
             token = os.environ.get("SBCTL_TOKEN") or os.environ.get("REPLICATED")
             assert token is None, "Token should be None when neither env var is set"
+
+
+class TestGitHubUrlPatternMatching:
+    """Test GitHub URL pattern detection without requiring authentication tokens."""
+
+    def test_github_url_pattern_matching(self):
+        """Test that GitHub URLs are correctly identified."""
+        from troubleshoot_mcp_server.bundle import (
+            GITHUB_ATTACHMENT_URL_PATTERN,
+            GITHUB_RELEASE_URL_PATTERN,
+            GITHUB_RAW_URL_PATTERN,
+        )
+
+        test_cases = [
+            # GitHub attachment URLs
+            ("https://github.com/user-attachments/files/12345/bundle.tar.gz", True, "attachment"),
+            (
+                "https://github.com/user-attachments/files/67890/support-bundle.tgz",
+                True,
+                "attachment",
+            ),
+            ("https://github.com/user-attachments/files/999999/bundle", True, "attachment"),
+            # GitHub release URLs
+            (
+                "https://github.com/owner/repo/releases/download/v1.0.0/bundle.tar.gz",
+                True,
+                "release",
+            ),
+            (
+                "https://github.com/my-org/my-repo/releases/download/release-1.2.3/support-bundle.tgz",
+                True,
+                "release",
+            ),
+            (
+                "https://github.com/user/project/releases/download/latest/bundle.zip",
+                True,
+                "release",
+            ),
+            # GitHub raw content URLs
+            ("https://raw.githubusercontent.com/owner/repo/main/bundle.tar.gz", True, "raw"),
+            ("https://raw.githubusercontent.com/user/project/branch/path/file.tgz", True, "raw"),
+            ("https://raw.githubusercontent.com/org/repo/commit-hash/data/bundle.zip", True, "raw"),
+            # Non-GitHub URLs that should not match
+            ("https://example.com/bundle.tar.gz", False, "other"),
+            ("https://vendor.replicated.com/troubleshoot/analyze/my-slug", False, "replicated"),
+            ("https://gitlab.com/user/repo/uploads/bundle.tar.gz", False, "gitlab"),
+            ("https://bitbucket.org/user/repo/downloads/bundle.tar.gz", False, "bitbucket"),
+            ("http://github.com/user/repo/bundle.tar.gz", False, "http_github"),  # HTTP not HTTPS
+            ("https://github.com/user/repo/blob/main/bundle.tar.gz", False, "blob_url"),  # Blob URL
+            ("https://gist.github.com/user/123456/bundle.tar.gz", False, "gist_url"),  # Gist URL
+        ]
+
+        for url, should_match, url_type in test_cases:
+            if url_type == "attachment":
+                pattern_match = bool(GITHUB_ATTACHMENT_URL_PATTERN.match(url))
+            elif url_type == "release":
+                pattern_match = bool(GITHUB_RELEASE_URL_PATTERN.match(url))
+            elif url_type == "raw":
+                pattern_match = bool(GITHUB_RAW_URL_PATTERN.match(url))
+            else:
+                # Check that none of the GitHub patterns match
+                pattern_match = bool(
+                    GITHUB_ATTACHMENT_URL_PATTERN.match(url)
+                    or GITHUB_RELEASE_URL_PATTERN.match(url)
+                    or GITHUB_RAW_URL_PATTERN.match(url)
+                )
+
+            if should_match:
+                assert pattern_match, f"GitHub {url_type} URL should match pattern: {url}"
+            else:
+                assert not pattern_match, (
+                    f"Non-GitHub or invalid URL should not match: {url} (type: {url_type})"
+                )
+
+    def test_github_bundle_manager_url_detection(self):
+        """Test BundleManager correctly detects GitHub URLs using _is_github_url method."""
+        import tempfile
+        from pathlib import Path
+        from troubleshoot_mcp_server.bundle import BundleManager
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            bundle_dir = Path(temp_dir)
+            manager = BundleManager(bundle_dir)
+
+            github_urls = [
+                "https://github.com/user-attachments/files/12345/bundle.tar.gz",
+                "https://github.com/owner/repo/releases/download/v1.0.0/bundle.tar.gz",
+                "https://raw.githubusercontent.com/owner/repo/main/bundle.tar.gz",
+            ]
+
+            non_github_urls = [
+                "https://example.com/bundle.tar.gz",
+                "https://vendor.replicated.com/troubleshoot/analyze/my-slug",
+                "https://gitlab.com/user/repo/uploads/bundle.tar.gz",
+            ]
+
+            for url in github_urls:
+                assert manager._is_github_url(url), f"Should detect GitHub URL: {url}"
+
+            for url in non_github_urls:
+                assert not manager._is_github_url(url), f"Should not detect non-GitHub URL: {url}"
+
+
+class TestGitHubTokenPriority:
+    """Test GitHub token priority logic in isolation."""
+
+    def test_github_token_priority_logic(self):
+        """Test that GitHub tokens are prioritized correctly: GITHUB_TOKEN > GH_TOKEN > SBCTL_TOKEN."""
+
+        # Test GITHUB_TOKEN has highest priority
+        with patch.dict(
+            os.environ,
+            {"GITHUB_TOKEN": "github-token", "GH_TOKEN": "gh-token", "SBCTL_TOKEN": "sbctl-token"},
+        ):
+            # This mirrors the logic in _download_github_attachment
+            token = (
+                os.environ.get("GITHUB_TOKEN")
+                or os.environ.get("GH_TOKEN")
+                or os.environ.get("SBCTL_TOKEN")
+            )
+            assert token == "github-token", "GITHUB_TOKEN should have highest priority"
+
+        # Test GH_TOKEN when GITHUB_TOKEN not available
+        with patch.dict(
+            os.environ, {"GH_TOKEN": "gh-token", "SBCTL_TOKEN": "sbctl-token"}, clear=True
+        ):
+            token = (
+                os.environ.get("GITHUB_TOKEN")
+                or os.environ.get("GH_TOKEN")
+                or os.environ.get("SBCTL_TOKEN")
+            )
+            assert token == "gh-token", "GH_TOKEN should be used when GITHUB_TOKEN is not set"
+
+        # Test SBCTL_TOKEN when neither GITHUB_TOKEN nor GH_TOKEN available
+        with patch.dict(os.environ, {"SBCTL_TOKEN": "sbctl-token"}, clear=True):
+            token = (
+                os.environ.get("GITHUB_TOKEN")
+                or os.environ.get("GH_TOKEN")
+                or os.environ.get("SBCTL_TOKEN")
+            )
+            assert token == "sbctl-token", "SBCTL_TOKEN should be used when others are not set"
+
+        # Test when no tokens are available
+        with patch.dict(os.environ, {}, clear=True):
+            token = (
+                os.environ.get("GITHUB_TOKEN")
+                or os.environ.get("GH_TOKEN")
+                or os.environ.get("SBCTL_TOKEN")
+            )
+            assert token is None, "Token should be None when no env vars are set"
