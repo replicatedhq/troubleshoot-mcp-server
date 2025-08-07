@@ -43,6 +43,21 @@ class ReadFileError(FileSystemError):
     pass
 
 
+class DirectoryAccessError(ReadFileError):
+    """Exception raised when attempting to read a directory, with file suggestions."""
+
+    def __init__(self, message: str, suggestions: Optional[List[str]] = None):
+        """
+        Initialize the DirectoryAccessError.
+
+        Args:
+            message: The error message
+            suggestions: List of suggested file paths
+        """
+        super().__init__(message)
+        self.suggestions = suggestions or []
+
+
 class SearchError(FileSystemError):
     """Exception raised when a file search fails."""
 
@@ -383,6 +398,42 @@ class FileExplorer:
 
         return full_path
 
+    def _suggest_file_alternatives(self, directory_path: Path) -> List[str]:
+        """
+        Find files with common extensions that match directory name.
+
+        Args:
+            directory_path: The directory path that was attempted to be read
+
+        Returns:
+            List of suggested file paths with common extensions
+        """
+        common_extensions = [".json", ".yaml", ".yml", ".log", ".txt"]
+        suggestions: List[str] = []
+
+        if not directory_path.exists():
+            return suggestions
+
+        # Get the directory name
+        dir_name = directory_path.name
+
+        # Check parent directory for files with matching name + extension
+        parent_dir = directory_path.parent
+        if parent_dir.exists():
+            for ext in common_extensions:
+                candidate_file = parent_dir / f"{dir_name}{ext}"
+                if candidate_file.exists() and candidate_file.is_file():
+                    # Make path relative to bundle root for display
+                    try:
+                        bundle_path = self._get_bundle_path()
+                        rel_path = str(candidate_file.relative_to(bundle_path))
+                        suggestions.append(rel_path)
+                    except Exception:
+                        # Fallback to absolute path if relative fails
+                        suggestions.append(str(candidate_file))
+
+        return suggestions
+
     def _is_binary(self, path: Path) -> bool:
         """
         Check if a file is binary.
@@ -541,6 +592,15 @@ class FileExplorer:
                 raise PathNotFoundError(f"Path not found: {path}")
 
             if not full_path.is_file():
+                # Check if it's a directory and offer suggestions
+                if full_path.is_dir():
+                    suggestions = self._suggest_file_alternatives(full_path)
+                    if suggestions:
+                        suggestion_text = "\n".join(f"• {suggestion}" for suggestion in suggestions)
+                        error_message = f"Path is not a file: {path}\n\nDid you mean one of these files?\n{suggestion_text}"
+                        raise DirectoryAccessError(error_message, suggestions)
+
+                # If not a directory or no suggestions, use the original error
                 raise ReadFileError(f"Path is not a file: {path}")
 
             # Check if the file is binary
@@ -599,6 +659,7 @@ class FileExplorer:
         except (
             PathNotFoundError,
             InvalidPathError,
+            DirectoryAccessError,
             ReadFileError,
             FileSystemError,
         ) as e:
