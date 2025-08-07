@@ -6,12 +6,31 @@ build-backend = "setuptools.build_meta"
 name = "troubleshoot-mcp-server"
 version = "0.1.0"
 description = "MCP server for Kubernetes support bundles"
+readme = "README.md"
+license = "Apache-2.0"
+authors = [
+    {name = "Chris Nesbitt-Smith", email = "chris@cns.me"},
+]
+keywords = [
+    "mcp",
+    "kubernetes",
+    "troubleshoot",
+    "support-bundle",
+    "ai",
+    "claude",
+    "debugging",
+]
+urls = { "Homepage" = "https://github.com/chrisns/troubleshoot-mcp-server", "Repository" = "https://github.com/chrisns/troubleshoot-mcp-server", "Issues" = "https://github.com/chrisns/troubleshoot-mcp-server/issues" }
 requires-python = ">=3.13"
 classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.13",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: System :: Systems Administration",
 ]
 dependencies = [
     # Core dependencies without unnecessary version constraints
