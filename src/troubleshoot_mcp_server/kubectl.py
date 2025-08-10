@@ -68,6 +68,17 @@ class KubectlCommandArgs(BaseModel):
         if not v or not v.strip():
             raise ValueError("kubectl command cannot be empty")
 
+        # Check for shell operations that are not supported
+        shell_operators = ["|", "&&", "||", ";", ">", ">>", "<", "<<", "$(", "`", "&"]
+        for op in shell_operators:
+            if op in v:
+                raise ValueError(
+                    "Shell operations are not supported in kubectl commands. "
+                    "Use kubectl arguments only, not shell commands.\n"
+                    "❌ Invalid: 'get pods | grep nginx'\n"
+                    "✅ Valid: 'get pods -l app=nginx'"
+                )
+
         # Check for potentially dangerous operations
         dangerous_operations = [
             "delete",

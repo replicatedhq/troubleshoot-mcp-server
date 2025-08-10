@@ -146,6 +146,14 @@ async def initialize_bundle(
     Initialize a Kubernetes support bundle for analysis. This tool loads a bundle
     and makes it available for exploration with other tools.
 
+    BUNDLE PERSISTENCE: Once initialized, a bundle remains active for all subsequent
+    tool calls (kubectl, list_files, read_file, grep_files) until a different bundle
+    is initialized. You don't need to re-initialize the same bundle repeatedly.
+
+    Use `force=true` to switch to a different bundle or to reload the current bundle.
+    Use `list_available_bundles` to discover previously downloaded bundles that can
+    be quickly re-initialized.
+
     Args:
         source: (string, required) The source of the bundle (URL or local file path)
         force: (boolean, optional) Whether to force re-initialization if a bundle
@@ -215,8 +223,9 @@ async def list_available_bundles(
     include_invalid: bool = False, verbosity: Optional[str] = None
 ) -> List[TextContent]:
     """
-    Scan the bundle storage directory to find available compressed bundle files and list them.
-    This tool helps discover which bundles are available for initialization.
+    List previously downloaded/initialized support bundles stored locally. This tool shows
+    bundles that have been downloaded or initialized before and are available in local
+    storage for quick re-initialization.
 
     Args:
         include_invalid: (boolean, optional) Whether to include invalid or inaccessible
@@ -257,6 +266,14 @@ async def kubectl(
     """
     Execute kubectl commands against the initialized bundle's API server. Allows
     running Kubernetes CLI commands to explore resources in the support bundle.
+
+    BUNDLE REQUIREMENT: This tool requires an active bundle. If no bundle is currently
+    active, use `initialize_bundle` to load a bundle first.
+
+    IMPORTANT: Accepts kubectl arguments only, not shell commands. Shell operations
+    like pipes (|), redirects (>), and command chaining (&&) are not supported.
+    ❌ Invalid: 'get pods | grep nginx'
+    ✅ Valid: 'get pods -l app=nginx'
 
     Args:
         command: (string, required) The kubectl command to execute (e.g., "get pods",
@@ -375,8 +392,8 @@ async def list_files(
     List files and directories within the support bundle. This tool lets you
     explore the directory structure of the initialized bundle.
 
-    IMPORTANT: This tool requires a bundle to be initialized first using the `initialize_bundle` tool.
-    If no bundle is initialized, use the `list_available_bundles` tool to find available bundles.
+    BUNDLE REQUIREMENT: This tool requires an active bundle. If no bundle is currently
+    active, use `initialize_bundle` to load a bundle first.
 
     Args:
         path: (string, required) The path within the bundle to list. Use "" or "/"
@@ -423,8 +440,8 @@ async def read_file(
     Read a file within the support bundle with optional line range filtering.
     Displays file content with line numbers.
 
-    IMPORTANT: This tool requires a bundle to be initialized first using the `initialize_bundle` tool.
-    If no bundle is initialized, use the `list_available_bundles` tool to find available bundles.
+    BUNDLE REQUIREMENT: This tool requires an active bundle. If no bundle is currently
+    active, use `initialize_bundle` to load a bundle first.
 
     Args:
         path: (string, required) The path to the file within the bundle to read.
@@ -480,8 +497,8 @@ async def grep_files(
     Search for patterns in files within the support bundle. Searches both file content
     and filenames, making it useful for finding keywords, error messages, or identifying files.
 
-    IMPORTANT: This tool requires a bundle to be initialized first using the `initialize_bundle` tool.
-    If no bundle is initialized, use the `list_available_bundles` tool to find available bundles.
+    BUNDLE REQUIREMENT: This tool requires an active bundle. If no bundle is currently
+    active, use `initialize_bundle` to load a bundle first.
 
     Args:
         pattern: (string, required) The pattern to search for. Supports regex syntax.

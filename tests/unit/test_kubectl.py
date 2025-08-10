@@ -59,6 +59,53 @@ def test_kubectl_command_args_validation_invalid():
             KubectlCommandArgs(command=f"{op} something")
 
 
+def test_kubectl_command_args_validation_shell_operations():
+    """Test that KubectlCommandArgs rejects shell operations."""
+    # Shell operations that should be rejected
+    shell_operations = [
+        "get pods | grep nginx",
+        "get pods && echo done",
+        "get pods || echo failed",
+        "get pods; get services",
+        "get pods > output.txt",
+        "get pods >> output.txt",
+        "cat input.txt < get pods",
+        "get pods << EOF",
+        "get pods $(echo test)",
+        "get pods `echo test`",
+        "get pods &",
+    ]
+
+    for cmd in shell_operations:
+        with pytest.raises(ValidationError) as excinfo:
+            KubectlCommandArgs(command=cmd)
+
+        # Verify the error message explains shell operations aren't supported
+        error_message = str(excinfo.value)
+        assert "Shell operations are not supported" in error_message
+        assert "Use kubectl arguments only" in error_message
+        assert "❌ Invalid: 'get pods | grep nginx'" in error_message
+        assert "✅ Valid: 'get pods -l app=nginx'" in error_message
+
+
+def test_kubectl_command_args_validation_valid_commands():
+    """Test that KubectlCommandArgs accepts valid commands with special characters."""
+    # Valid commands that might contain characters that look like shell ops
+    valid_commands = [
+        "get pods -l app=nginx",
+        "get pods --field-selector=status.phase!=Running",
+        "describe pod my-pod-123",
+        "get services --output=jsonpath={.items[*].metadata.name}",
+        "get nodes --show-labels",
+        "get pods -o custom-columns=NAME:.metadata.name,STATUS:.status.phase",
+    ]
+
+    for cmd in valid_commands:
+        # These should not raise validation errors
+        args = KubectlCommandArgs(command=cmd)
+        assert args.command == cmd
+
+
 @pytest.mark.asyncio
 async def test_kubectl_executor_initialization():
     """Test that the kubectl executor can be initialized."""
