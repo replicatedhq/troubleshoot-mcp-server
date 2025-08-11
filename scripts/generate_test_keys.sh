@@ -29,10 +29,9 @@ if ! command -v openssl &> /dev/null; then
     exit 1
 fi
 
-# Generate private key in PKCS8 format (required by melange)
-# First generate a traditional RSA key, then convert to PKCS8
-openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 | \
-openssl pkcs8 -topk8 -nocrypt -out "$PRIVATE_KEY"
+# Generate private key in PKCS1 format (required by melange)
+# Use legacy mode to force PKCS1 format (RSA PRIVATE KEY)
+openssl genrsa -traditional 2048 > "$PRIVATE_KEY"
 
 # Generate public key
 openssl rsa -in "$PRIVATE_KEY" -pubout -out "$PUBLIC_KEY"

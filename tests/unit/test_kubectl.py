@@ -26,7 +26,7 @@ def test_kubectl_command_args_validation():
     # Valid command
     args = KubectlCommandArgs(command="get pods")
     assert args.command == "get pods"
-    assert args.timeout == 30  # Default value
+    assert args.timeout == 5  # Default value
     assert args.json_output is False  # Default value
 
     # Valid command with custom timeout and json_output
@@ -191,7 +191,7 @@ async def test_kubectl_executor_execute_success():
 
     # Verify the result
     assert result == mock_result
-    executor._run_kubectl_command.assert_awaited_once_with("get pods", bundle, 30, False)
+    executor._run_kubectl_command.assert_awaited_once_with("get pods", bundle, 5, False)
 
 
 @pytest.mark.asyncio
@@ -627,7 +627,7 @@ async def test_kubectl_executor_defaults_to_table_format():
     assert result == mock_result
 
     # Verify _run_kubectl_command was called with json_output=False (the new default)
-    executor._run_kubectl_command.assert_awaited_once_with("get pods", bundle, 30, False)
+    executor._run_kubectl_command.assert_awaited_once_with("get pods", bundle, 5, False)
 
 
 def test_compact_json_formatting():

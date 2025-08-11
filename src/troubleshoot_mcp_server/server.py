@@ -108,6 +108,31 @@ def get_file_explorer() -> FileExplorer:
     return _file_explorer
 
 
+def _format_crash_recovery_message(crash_info: dict) -> str:
+    """Format crash recovery information for display to the LLM."""
+    lines = ["⚠️ SBCTL PROCESS RECOVERY:"]
+
+    exit_code = crash_info.get("exit_code", "unknown")
+    lines.append(f"The API server crashed (exit code {exit_code}) but was automatically restarted.")
+
+    last_command = crash_info.get("last_timeout_command")
+    if last_command:
+        lines.append(f"Last command before crash: {last_command}")
+
+    stderr_lines = crash_info.get("stderr_lines", [])
+    if stderr_lines:
+        lines.append("Error output:")
+        # Show last few lines of stderr
+        for line in stderr_lines[-5:]:  # Last 5 lines
+            lines.append(f"  {line}")
+
+    timestamp = crash_info.get("timestamp", "")
+    if timestamp:
+        lines.append(f"Recovery timestamp: {timestamp}")
+
+    return "\n".join(lines)
+
+
 def check_response_size(
     content: str, tool_name: str, formatter: ResponseFormatter
 ) -> List[TextContent]:
@@ -261,7 +286,7 @@ async def list_available_bundles(
 
 @mcp.tool()
 async def kubectl(
-    command: str, timeout: int = 30, json_output: bool = False, verbosity: Optional[str] = None
+    command: str, timeout: int = 5, json_output: bool = False, verbosity: Optional[str] = None
 ) -> List[TextContent]:
     """
     Execute kubectl commands against the initialized bundle's API server. Allows
@@ -278,7 +303,7 @@ async def kubectl(
     Args:
         command: (string, required) The kubectl command to execute (e.g., "get pods",
             "get nodes -o wide", "describe deployment nginx")
-        timeout: (integer, optional) Timeout in seconds for the command. Defaults to 30.
+        timeout: (integer, optional) Timeout in seconds for the command. Defaults to 5.
         json_output: (boolean, optional) Whether to format the output as JSON.
             Defaults to False. Set to True for JSON output.
         verbosity: (string, optional) Verbosity level for response formatting
@@ -331,8 +356,17 @@ async def kubectl(
         # Execute the kubectl command
         result = await get_kubectl_executor().execute(command, timeout, json_output)
 
+        # Check for crash recovery information
+        crash_recovery_info = bundle_manager.get_crash_recovery_info()
+
         # Format response using the formatter
         response = formatter.format_kubectl_result(result)
+
+        # Append crash recovery information if available
+        if crash_recovery_info:
+            recovery_message = _format_crash_recovery_message(crash_recovery_info)
+            response += f"\n\n{recovery_message}"
+
         return check_response_size(response, "kubectl", formatter)
 
     except KubectlError as e:
