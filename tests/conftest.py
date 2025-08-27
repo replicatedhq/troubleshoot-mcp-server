@@ -14,6 +14,10 @@ os.environ["MCP_VERBOSITY"] = "verbose"
 # Ensure test builds use test keys for melange/apko tests
 os.environ["MELANGE_TEST_BUILD"] = "true"
 
+# Enable list_available_bundles tool for all tests
+# This tool is hidden by default to avoid confusing AI agents
+os.environ["ENABLE_LIST_BUNDLES_TOOL"] = "true"
+
 # Configure pytest_asyncio globally
 pytest_plugins = ["pytest_asyncio"]
 

@@ -334,7 +334,7 @@ class FileExplorer:
         if bundle is None:
             raise FileSystemError(
                 "No bundle is active. Please initialize a bundle first using the initialize_bundle tool. "
-                "You can use the list_available_bundles tool to see available bundles."
+                "Provide a bundle URL or path to the initialize_bundle tool."
             )
 
         # Check if we should use the extracted directory for file operations

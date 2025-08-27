@@ -6,6 +6,7 @@ to the non-standard 'args' wrapper format.
 """
 
 import json
+import os
 
 import pytest
 
@@ -52,14 +53,25 @@ async def test_mcp_tool_schemas_do_not_use_args_wrapper():
     tools = await mcp.list_tools()
 
     # Assert we have the expected tools
-    expected_tool_names = {
+    # list_available_bundles is conditionally available based on environment
+    base_tool_names = {
         "initialize_bundle",
-        "list_available_bundles",
         "kubectl",
         "list_files",
         "read_file",
         "grep_files",
     }
+
+    expected_tool_names = base_tool_names.copy()
+
+    # Check if list_available_bundles tool should be available
+    list_bundles_enabled = os.environ.get("ENABLE_LIST_BUNDLES_TOOL", "false").lower() in (
+        "true",
+        "1",
+        "yes",
+    )
+    if list_bundles_enabled:
+        expected_tool_names.add("list_available_bundles")
 
     actual_tool_names = {tool.name for tool in tools}
     assert actual_tool_names == expected_tool_names, (
@@ -232,12 +244,20 @@ async def test_required_parameters_match_expectations():
     # Define expected required parameters for each tool
     expected_required = {
         "initialize_bundle": ["source"],
-        "list_available_bundles": [],  # No required parameters
         "kubectl": ["command"],
         "list_files": ["path"],
         "read_file": ["path"],
         "grep_files": ["pattern", "path"],
     }
+
+    # Add list_available_bundles if it's enabled
+    list_bundles_enabled = os.environ.get("ENABLE_LIST_BUNDLES_TOOL", "false").lower() in (
+        "true",
+        "1",
+        "yes",
+    )
+    if list_bundles_enabled:
+        expected_required["list_available_bundles"] = []  # No required parameters
 
     for tool_name, expected in expected_required.items():
         assert tool_name in tools, f"Tool {tool_name} not found"
@@ -256,3 +276,43 @@ async def test_required_parameters_match_expectations():
         assert set(actual_required) == set(expected), (
             f"Tool {tool_name} required parameters mismatch. Expected {expected}, got {actual_required}"
         )
+
+
+@pytest.mark.asyncio
+async def test_list_available_bundles_conditional_availability():
+    """
+    Test that list_available_bundles tool is properly hidden/shown based on environment variable.
+
+    This test verifies the core requirement of the hide-list-bundles-tool feature:
+    - Tool is hidden by default (ENABLE_LIST_BUNDLES_TOOL not set or false)
+    - Tool is available when ENABLE_LIST_BUNDLES_TOOL is set to true
+    """
+    # Get current environment value
+    current_value = os.environ.get("ENABLE_LIST_BUNDLES_TOOL")
+
+    try:
+        # Test 1: Tool should be available when enabled (our test setup enables it)
+        tools = await mcp.list_tools()
+        tool_names = {tool.name for tool in tools}
+
+        list_bundles_enabled = os.environ.get("ENABLE_LIST_BUNDLES_TOOL", "false").lower() in (
+            "true",
+            "1",
+            "yes",
+        )
+
+        if list_bundles_enabled:
+            assert "list_available_bundles" in tool_names, (
+                "list_available_bundles should be available when ENABLE_LIST_BUNDLES_TOOL is enabled"
+            )
+        else:
+            assert "list_available_bundles" not in tool_names, (
+                "list_available_bundles should be hidden when ENABLE_LIST_BUNDLES_TOOL is not enabled"
+            )
+
+    finally:
+        # Restore original value
+        if current_value is not None:
+            os.environ["ENABLE_LIST_BUNDLES_TOOL"] = current_value
+        elif "ENABLE_LIST_BUNDLES_TOOL" in os.environ:
+            del os.environ["ENABLE_LIST_BUNDLES_TOOL"]

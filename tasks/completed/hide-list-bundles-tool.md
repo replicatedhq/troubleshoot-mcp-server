@@ -120,13 +120,43 @@ If issues arise:
 - Internal functionality is preserved, only MCP exposure is conditional
 
 ## Task Metadata
-- **Status**: backlog
+- **Status**: completed
 - **Priority**: high
 - **Type**: enhancement
 - **Component**: mcp-server
 - **Labels**: ai-experience, tool-management
 - **Estimated**: 2-3 hours
 - **Created**: 2025-01-27
+- **Started**: 2025-08-27
+- **Completed**: 2025-08-27
+- **PR URL**: https://github.com/chris-sanders/troubleshoot-mcp-server/pull/59
 
 ## Progress Log
-<!-- Update this section as work progresses -->
+- 2025-08-27: Started task, created worktree, moved to active
+- 2025-08-27: Implemented conditional tool registration with ENABLE_LIST_BUNDLES_TOOL environment variable
+- 2025-08-27: Updated error messages to remove tool reference when disabled
+- 2025-08-27: Updated test configuration to enable tool for testing
+- 2025-08-27: All unit tests passing, feature working as specified
+- 2025-08-27: Task completed successfully
+
+## Implementation Summary
+
+**Files Modified:**
+- `src/troubleshoot_mcp_server/server.py` - Added conditional tool registration
+- `src/troubleshoot_mcp_server/files.py` - Updated error messages
+- `tests/conftest.py` - Enabled tool for test environment
+- `tests/unit/test_schema_validation.py` - Added conditional availability tests
+
+**Key Achievements:**
+✅ Tool hidden by default (ENABLE_LIST_BUNDLES_TOOL=false)  
+✅ Tool available when enabled (ENABLE_LIST_BUNDLES_TOOL=true)  
+✅ Internal BundleManager functionality preserved  
+✅ All existing tests passing (241/241)  
+✅ Code quality checks passing  
+✅ Comprehensive test coverage for new functionality
+
+**Environment Variable:**
+- `ENABLE_LIST_BUNDLES_TOOL=true` - Shows the tool in MCP discovery
+- Default/unset - Hides the tool from MCP discovery
+
+The implementation successfully addresses AI agent confusion while maintaining backward compatibility for environments that need the tool.

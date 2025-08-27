@@ -4,6 +4,7 @@ MCP server implementation for Kubernetes support bundles.
 
 import asyncio
 import logging
+import os
 import signal
 import sys
 from pathlib import Path
@@ -30,6 +31,14 @@ logger = logging.getLogger(__name__)
 # Create FastMCP server with lifecycle management
 # We don't enable stdio mode here - it will be configured in __main__.py
 mcp = FastMCP("troubleshoot-mcp-server", lifespan=app_lifespan)
+
+# Check if list_bundles tool should be enabled
+# Hidden by default to avoid confusing AI agents about bundle persistence
+ENABLE_LIST_BUNDLES_TOOL = os.environ.get("ENABLE_LIST_BUNDLES_TOOL", "false").lower() in (
+    "true",
+    "1",
+    "yes",
+)
 
 # Flag to track if we're shutting down
 _is_shutting_down = False
@@ -176,8 +185,7 @@ async def initialize_bundle(
     is initialized. You don't need to re-initialize the same bundle repeatedly.
 
     Use `force=true` to switch to a different bundle or to reload the current bundle.
-    Use `list_available_bundles` to discover previously downloaded bundles that can
-    be quickly re-initialized.
+    Previously downloaded bundles can be quickly re-initialized by providing their path.
 
     Args:
         source: (string, required) The source of the bundle (URL or local file path)
@@ -243,8 +251,7 @@ async def initialize_bundle(
         return check_response_size(formatted_error, "initialize_bundle", formatter)
 
 
-@mcp.tool()
-async def list_available_bundles(
+async def list_available_bundles_impl(
     include_invalid: bool = False, verbosity: Optional[str] = None
 ) -> List[TextContent]:
     """
@@ -282,6 +289,38 @@ async def list_available_bundles(
         logger.exception(error_message)
         formatted_error = formatter.format_error(error_message)
         return check_response_size(formatted_error, "list_bundles", formatter)
+
+
+# Conditionally register the list_available_bundles tool
+if ENABLE_LIST_BUNDLES_TOOL:
+    # Register as MCP tool with proper name
+    @mcp.tool()
+    async def list_available_bundles(
+        include_invalid: bool = False, verbosity: Optional[str] = None
+    ) -> List[TextContent]:
+        """
+        List previously downloaded/initialized support bundles stored locally. This tool shows
+        bundles that have been downloaded or initialized before and are available in local
+        storage for quick re-initialization.
+
+        Args:
+            include_invalid: (boolean, optional) Whether to include invalid or inaccessible
+                bundles in the results. Defaults to False.
+            verbosity: (string, optional) Verbosity level for response formatting
+                (minimal|standard|verbose|debug). Defaults to minimal.
+
+        Returns:
+            A list of available bundle files with details including path, size, and modification time.
+            Bundles are validated to ensure they have the expected support bundle structure.
+        """
+        return await list_available_bundles_impl(include_invalid, verbosity)
+else:
+    # Keep the function available for internal use but not as MCP tool
+    async def list_available_bundles(
+        include_invalid: bool = False, verbosity: Optional[str] = None
+    ) -> List[TextContent]:
+        """Internal function available when tool is disabled."""
+        return await list_available_bundles_impl(include_invalid, verbosity)
 
 
 @mcp.tool()
