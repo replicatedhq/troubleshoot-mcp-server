@@ -1223,14 +1223,10 @@ class TestGitHubAuthentication:
             mock_aio_session.__aexit__ = AsyncMock(return_value=None)
 
             with patch("aiohttp.ClientSession", return_value=mock_aio_session):
-                # Test GITHUB_TOKEN has highest priority
+                # Test GITHUB_TOKEN is used
                 with patch.dict(
                     os.environ,
-                    {
-                        "GITHUB_TOKEN": "github_token",
-                        "GH_TOKEN": "gh_token",
-                        "SBCTL_TOKEN": "sbctl_token",
-                    },
+                    {"GITHUB_TOKEN": "github_token", "SBCTL_TOKEN": "sbctl_token"},
                     clear=True,
                 ):
                     await manager._download_github_attachment(test_url)
@@ -1239,23 +1235,10 @@ class TestGitHubAuthentication:
                     call_args = mock_aio_session.get.call_args
                     assert call_args[1]["headers"]["Authorization"] == "token github_token"
 
-                # Test GH_TOKEN when GITHUB_TOKEN not available
-                with patch.dict(
-                    os.environ, {"GH_TOKEN": "gh_token", "SBCTL_TOKEN": "sbctl_token"}, clear=True
-                ):
-                    await manager._download_github_attachment(test_url)
-
-                    # Verify the call was made with GH_TOKEN
-                    call_args = mock_aio_session.get.call_args
-                    assert call_args[1]["headers"]["Authorization"] == "token gh_token"
-
-                # Test SBCTL_TOKEN when neither GITHUB_TOKEN nor GH_TOKEN available
+                # Test SBCTL_TOKEN when GITHUB_TOKEN not available (should fail)
                 with patch.dict(os.environ, {"SBCTL_TOKEN": "sbctl_token"}, clear=True):
-                    await manager._download_github_attachment(test_url)
-
-                    # Verify the call was made with SBCTL_TOKEN
-                    call_args = mock_aio_session.get.call_args
-                    assert call_args[1]["headers"]["Authorization"] == "token sbctl_token"
+                    with pytest.raises(BundleDownloadError, match="No authentication token found"):
+                        await manager._download_github_attachment(test_url)
 
     @pytest.mark.asyncio
     async def test_missing_token_error(self):
