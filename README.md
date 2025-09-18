@@ -174,7 +174,8 @@ AI models can interact with the server using the MCP protocol:
 │       └── server.py          # MCP server implementation
 └── tests/                     # Test files
     ├── e2e/                   # End-to-end tests
-    ├── fixtures/              # Test fixtures 
+    ├── fixtures/              # Test fixtures
+    ├── functional/            # Functional tests (MCP protocol validation)
     ├── integration/           # Integration tests
     ├── unit/                  # Unit tests
     └── util/                  # Test utilities
@@ -225,6 +226,7 @@ uv run pytest -v
 # Run a specific test type using markers
 uv run pytest -m unit
 uv run pytest -m integration
+uv run pytest -m functional  # MCP protocol validation
 uv run pytest -m e2e
 
 # Run tests with detailed warnings

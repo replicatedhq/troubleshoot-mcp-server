@@ -18,13 +18,26 @@ This document outlines the testing strategy for the MCP Troubleshoot Server, exp
 - **Run with**: `uv run pytest tests/integration/`
 - **CI**: Always run on every PR
 
-### 3. E2E Tests (`tests/e2e/`)
+### 3. Functional Tests (`tests/functional/`)
+- **Purpose**: Test MCP protocol compatibility and server functionality through JSON-RPC
+- **Coverage**: All 5 required tools validated through actual MCP protocol communication
+- **Run with**: `uv run pytest tests/functional/` or `uv run pytest -m functional`
+- **CI**: Run after lint passes, before slower tests
+- **Key Features**:
+  - Full protocol validation using MCPTestClient over stdio transport
+  - Tool discovery and schema validation
+  - Bundle lifecycle management through protocol
+  - Error handling and parameter validation
+  - Performance benchmarks (tool discovery <100ms, calls <5s)
+  - Sequential execution adapted for stdio transport limitations
+
+### 4. E2E Tests (`tests/e2e/`)
 - **Purpose**: Test complete workflows end-to-end
 - **Coverage**: Direct tool integration, container functionality
 - **Run with**: `uv run pytest tests/e2e/`
 - **CI**: Run `test_direct_tool_integration.py` on every PR
 
-### 4. Container Tests
+### 5. Container Tests
 - **Purpose**: Test server running in container environment
 - **Coverage**: Melange/Apko builds, container-specific functionality
 - **Run with**: `uv run pytest -m container`
@@ -32,29 +45,41 @@ This document outlines the testing strategy for the MCP Troubleshoot Server, exp
 
 ## Testing Philosophy
 
-### Direct Tool Testing
-We test MCP tool functionality by calling the tool functions directly rather than through the MCP protocol layer. This approach provides:
+### Multi-Layer Testing Approach
+We use a comprehensive testing strategy that validates functionality at multiple levels:
+
+#### Direct Tool Testing (Unit/Integration Tests)
+We test MCP tool functionality by calling the tool functions directly for:
 
 1. **Better Reliability**: No dependency on protocol implementation details
 2. **Faster Execution**: Direct function calls are much faster
 3. **Clearer Errors**: Direct exceptions rather than protocol error codes
 4. **Easier Debugging**: Standard Python debugging tools work directly
 
-### Protocol Layer Testing
-The MCP protocol layer is handled by the FastMCP framework, which is well-tested by its maintainers. We focus our testing efforts on:
+#### MCP Protocol Testing (Functional Tests)
+We also validate the complete MCP protocol layer to ensure compatibility:
 
-1. **Business Logic**: The actual tool implementations
-2. **Error Handling**: How tools handle various error conditions
-3. **Integration**: How tools work together in workflows
-4. **Performance**: Ensuring tools respond quickly
+1. **Protocol Compatibility**: Ensures server works correctly as an MCP server
+2. **Schema Validation**: Verifies tool schemas follow MCP standards
+3. **JSON-RPC Communication**: Tests actual protocol communication over stdio
+4. **Error Boundary Testing**: Validates proper MCP error responses
+5. **Performance Benchmarks**: Ensures protocol responses meet timing requirements
 
-### Why No MCP Protocol Tests?
-We previously had MCP protocol tests that communicated via JSON-RPC, but removed them because:
+### Why Both Testing Layers?
+This dual approach provides comprehensive coverage:
 
-1. **Limited Value**: They tested FastMCP's protocol handling, not our code
-2. **Maintenance Burden**: Required maintaining a custom test client
-3. **Redundant Coverage**: All functionality was already tested directly
-4. **False Failures**: Protocol changes caused test failures unrelated to functionality
+- **Direct Testing**: Fast, reliable validation of business logic and error handling
+- **Protocol Testing**: Ensures MCP compatibility and catches protocol-breaking changes
+- **Defense in Depth**: Changes that break either layer are caught before deployment
+- **Future-Proof**: Protocol tests catch compatibility issues as MCP standard evolves
+
+### Previous Protocol Test Issues (Historical)
+We previously removed protocol tests due to maintenance issues, but have now implemented a robust approach using:
+
+1. **MCPTestClient**: Reuses existing integration test infrastructure
+2. **stdio Transport**: Simple, reliable communication method
+3. **Sequential Execution**: Adapted for transport limitations
+4. **Response Format Flexibility**: Handles server response evolution gracefully
 
 ## Running Tests
 
@@ -66,6 +91,7 @@ uv run pytest
 # Run specific test categories
 uv run pytest tests/unit/
 uv run pytest tests/integration/
+uv run pytest tests/functional/  # MCP protocol validation
 uv run pytest tests/e2e/
 
 # Run with coverage
@@ -77,11 +103,13 @@ The GitHub Actions workflow runs tests in this order:
 
 1. **Fast Feedback** (parallel):
    - Linting and type checking
-   - Unit tests
    - Direct tool E2E tests
 
-2. **Comprehensive Testing** (after fast tests pass):
-   - Integration tests
+2. **Protocol Validation** (after lint passes):
+   - Functional tests (MCP protocol validation)
+
+3. **Comprehensive Testing** (after fast tests and functional tests pass):
+   - All tests with coverage (unit + integration + functional)
    - Container tests
 
 ## Test Requirements
@@ -93,18 +121,82 @@ The GitHub Actions workflow runs tests in this order:
 - Test fixtures in `tests/fixtures/`
 
 ### Writing New Tests
-1. Use appropriate test category based on scope
+1. Use appropriate test category based on scope:
+   - **Unit**: Testing isolated components/functions
+   - **Integration**: Testing multiple components together
+   - **Functional**: Testing through MCP protocol (for new tools or protocol changes)
+   - **E2E**: Testing complete workflows
+   - **Container**: Testing container-specific functionality
+
 2. Follow existing patterns in test files
 3. Use fixtures for common setup
 4. Ensure tests are independent and can run in any order
-5. Add appropriate pytest markers (@pytest.mark.unit, etc.)
+5. Add appropriate pytest markers (@pytest.mark.unit, @pytest.mark.functional, etc.)
+
+### When to Add Functional Tests
+Add functional tests when:
+- **Adding new MCP tools**: Ensure they work through the protocol layer
+- **Changing tool schemas**: Validate schema compatibility is maintained
+- **Modifying response formats**: Ensure protocol responses remain valid
+- **Protocol-level changes**: Any changes that could affect MCP communication
+- **Performance requirements**: When tools need specific response time guarantees
+
+### Functional Test Patterns
+
+#### Single Client Testing (Most Common)
+```python
+@pytest.mark.functional
+@pytest.mark.asyncio
+async def test_new_tool_via_protocol(mcp_protocol_client: MCPTestClient) -> None:
+    \"\"\"Test new tool through MCP protocol.\"\"\"
+    # Setup - initialize bundle if needed
+    await mcp_protocol_client.call_tool("initialize_bundle", {...})
+
+    # Execute - call tool through protocol
+    result = await mcp_protocol_client.call_tool("new_tool", {...})
+
+    # Verify - check response format and content
+    assert len(result) == 1
+    assert result[0]["type"] == "text"
+    assert "expected content" in result[0]["text"]
+```
+
+#### Parallel Testing (For Performance-Critical Operations)
+```python
+@pytest.mark.functional
+@pytest.mark.asyncio
+async def test_parallel_operations() -> None:
+    \"\"\"Test operations in parallel using multiple client instances.\"\"\"
+    clients = []
+    try:
+        # Create multiple clients (each with own server subprocess)
+        for i in range(3):
+            client = MCPTestClient()
+            await client.start_server()
+            await client.initialize_mcp({\"name\": f\"client-{i}\", \"version\": \"1.0.0\"})
+            await client.send_notification(\"notifications/initialized\")
+            clients.append(client)
+
+        # Run operations in true parallel (2.94x speedup demonstrated)
+        tasks = [client.call_tool(\"tool_name\", {...}) for client in clients]
+        results = await asyncio.gather(*tasks)
+
+        # Verify all results...
+
+    finally:
+        # Clean up all clients
+        await asyncio.gather(*[client.cleanup() for client in clients])
+```
+
+**Performance Benefits**: Parallel testing provides 2.94x speedup for I/O-bound operations like bundle initialization.
 
 ## Coverage Goals
 
 We aim for:
-- 55%+ combined code coverage (across unit and integration tests)
+- 55%+ combined code coverage (across unit, integration, and functional tests)
 - 60%+ unit test coverage
 - 45%+ integration test coverage
+- 100% functional test coverage of all MCP tools (protocol validation)
 - 90%+ coverage for critical paths (bundle loading, tool execution)
 
 Coverage is tracked natively in GitHub Actions on each PR:

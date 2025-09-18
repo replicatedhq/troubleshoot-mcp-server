@@ -87,10 +87,48 @@ jobs:
         run: uv run pytest tests/e2e/test_direct_tool_integration.py -v
 
 
+  functional-tests:
+    name: Functional Tests (MCP Protocol)
+    runs-on: ubuntu-latest
+    needs: [lint]  # Run after lint passes
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          allow-prereleases: true
+
+      - name: Install UV
+        run: |
+          pip install uv
+          uv --version
+
+      - name: Setup environment
+        run: |
+          uv sync --extra dev
+
+      - name: Install sbctl
+        run: |
+          mkdir -p /tmp/sbctl && cd /tmp/sbctl
+          curl -L -o sbctl.tar.gz "https://github.com/replicatedhq/sbctl/releases/latest/download/sbctl_linux_amd64.tar.gz"
+          tar xzf sbctl.tar.gz
+          chmod +x sbctl
+          sudo mv sbctl /usr/local/bin/
+          cd / && rm -rf /tmp/sbctl
+          sbctl --help
+
+      - name: Run functional tests (MCP protocol validation)
+        run: uv run pytest tests/functional/ -m functional -v
+
+
   all-tests-coverage:
     name: All Tests with Coverage
     runs-on: ubuntu-latest
-    needs: [lint, e2e-fast-tests]  # Only wait for fast feedback tests
+    needs: [lint, e2e-fast-tests, functional-tests]  # Include functional tests
     
     steps:
       - name: Checkout repository
@@ -124,7 +162,7 @@ jobs:
       - name: Run all tests with coverage (single execution)
         run: |
           # Run ALL tests together in one execution to get accurate coverage
-          uv run pytest tests/unit/ tests/integration/ --cov=src --cov-report=xml:coverage-all.xml --cov-report=term -v
+          uv run pytest tests/unit/ tests/integration/ tests/functional/ --cov=src --cov-report=xml:coverage-all.xml --cov-report=term -v
       
       - name: Generate individual coverage reports for comparison
         run: |
@@ -265,7 +303,7 @@ jobs:
   container-tests:
     name: Container Tests (Slow)
     runs-on: ubuntu-latest
-    needs: [lint, e2e-fast-tests]  # Run only after fast tests pass
+    needs: [lint, e2e-fast-tests, functional-tests]  # Run after fast tests and functional tests pass
     
     steps:
       - name: Checkout repository

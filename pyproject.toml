@@ -82,6 +82,7 @@ python_functions = "test_*"
 markers = [
     "unit: unit tests that test isolated components",
     "integration: tests that involve multiple components working together",
+    "functional: functional tests that validate MCP protocol compatibility",
     "e2e: end-to-end tests including external system interaction",
     "docker: tests that involve Docker functionality",
     "container: tests that involve running the MCP server in a container",
