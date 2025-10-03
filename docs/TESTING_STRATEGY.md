@@ -81,6 +81,33 @@ We previously removed protocol tests due to maintenance issues, but have now imp
 3. **Sequential Execution**: Adapted for transport limitations
 4. **Response Format Flexibility**: Handles server response evolution gracefully
 
+## CI Optimization Strategy
+
+### Coverage-First Approach
+We run all tests with coverage enabled from the start to eliminate duplicate execution:
+
+**Previous Approach (Inefficient):**
+- Functional tests ran separately (5 minutes)
+- All tests re-ran in coverage job (7.7 minutes)
+- Total: ~13 minutes with 5 minutes wasted on duplicates
+
+**Current Approach (Optimized):**
+- All tests run once with coverage (7.7 minutes)
+- Fast-fail enabled (exits on first failure)
+- Total: ~8 minutes, 40% faster
+
+**Why This Works:**
+- pytest-cov overhead is minimal (<5%)
+- Coverage data collected in single pass
+- No artifact passing or merging complexity
+- Simpler workflow maintenance
+
+### Fast-Fail Behavior
+Tests use `-x` flag to exit immediately on first failure:
+- Saves time during development (don't wait for full suite if something breaks)
+- Provides faster feedback on broken builds
+- Reduces GitHub Actions minutes usage
+
 ## Running Tests
 
 ### Local Development
@@ -102,15 +129,22 @@ uv run pytest --cov=src --cov-report=term
 The GitHub Actions workflow runs tests in this order:
 
 1. **Fast Feedback** (parallel):
-   - Linting and type checking
-   - Direct tool E2E tests
+   - Linting and type checking (~24s)
+   - Direct tool E2E tests (~21s)
 
-2. **Protocol Validation** (after lint passes):
-   - Functional tests (MCP protocol validation)
+2. **Comprehensive Testing** (after lint passes, parallel):
+   - All tests with coverage (~7.7m)
+     - Runs: unit + integration + functional tests
+     - Coverage-enabled from start (no duplicate runs)
+     - Fast-fail enabled (exits on first failure)
+   - Container tests (~2.5m)
 
-3. **Comprehensive Testing** (after fast tests and functional tests pass):
-   - All tests with coverage (unit + integration + functional)
-   - Container tests
+3. **Coverage Reporting** (~13s):
+   - Generates coverage summary
+   - Posts PR comment with details
+   - Enforces 60% threshold
+
+**Total CI Time:** ~8 minutes (optimized from previous ~13 minutes)
 
 ## Test Requirements
 
