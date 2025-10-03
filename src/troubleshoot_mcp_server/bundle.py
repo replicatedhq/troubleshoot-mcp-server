@@ -2483,8 +2483,19 @@ class BundleManager:
 
         This should be called when shutting down the server to ensure proper resource
         management and prevent orphaned files/processes.
+
+        The cleanup can be skipped by setting the PRESERVE_BUNDLES environment
+        variable to "true". This is useful for debugging or testing scenarios
+        where bundle preservation is needed.
         """
         logger.info("Performing complete cleanup during server shutdown")
+
+        # Check if bundle preservation is enabled via environment variable
+        preserve_bundles = os.environ.get("PRESERVE_BUNDLES", "false").lower() == "true"
+
+        if preserve_bundles:
+            logger.info("PRESERVE_BUNDLES is enabled, skipping bundle cleanup")
+            return
 
         # 1. Clean up the active bundle (processes and directories)
         await self._cleanup_active_bundle()
