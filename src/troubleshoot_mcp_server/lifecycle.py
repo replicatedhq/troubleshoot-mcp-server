@@ -102,6 +102,9 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
     # Initialize bundle manager
     bundle_manager = BundleManager(bundle_dir)
 
+    # Auto-activate bundle if single bundle mode is enabled
+    await bundle_manager._auto_activate_bundle_if_exists()
+
     # Create temp directory for extracted bundles
     temp_dir = create_temp_directory()
 

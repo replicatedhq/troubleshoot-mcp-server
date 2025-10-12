@@ -12,6 +12,65 @@ A Model Context Protocol (MCP) server for AI models to interact with Kubernetes 
 - 📁 **File Explorer**: Navigate and search files within the bundle
 - 🔐 **Secure Authentication**: Token-based authentication for bundle access
 - 🐳 **Container Support**: Run as a containerized application
+- ⚡ **Single Bundle Mode**: Stateless operation for ephemeral/serverless deployments
+
+## Single Bundle Mode (Stateless Operation)
+
+For stateless/ephemeral deployments (Temporal workflows, serverless functions, container-per-request architectures), enable **Single Bundle Mode**:
+
+```bash
+export MCP_SINGLE_BUNDLE_MODE=true
+export PRESERVE_BUNDLES=true
+export MCP_BUNDLE_STORAGE=/persistent-storage/bundles
+```
+
+### What is Single Bundle Mode?
+
+Single Bundle Mode eliminates in-memory bundle state tracking by treating the presence of a bundle on disk as the source of truth. This enables:
+
+- **Automatic Bundle Restoration**: When the server starts, it auto-activates the bundle persisted on disk
+- **Stateless Server Restarts**: Each server restart automatically uses the persisted bundle without re-initialization
+- **Single Bundle Invariant**: Only one bundle can exist at a time, preventing state confusion
+- **Seamless Temporal/Serverless Integration**: Works perfectly with short-lived server instances
+
+### Usage Pattern
+
+```bash
+# Activity 1: Initialize bundle
+# Server starts → downloads bundle → exits
+initialize_bundle(url="https://example.com/bundle.tar.gz")
+
+# Activity 2: Use bundle (new server instance)
+# Server starts → auto-activates bundle from disk → succeeds
+list_files(path="/kubernetes/pods")
+
+# Activity 3: Run kubectl (another new server instance)
+# Server starts → auto-activates bundle → succeeds
+kubectl(command="get pods")
+```
+
+### When to Use Single Bundle Mode
+
+✅ **Use when:**
+- Running in Temporal workflows where each activity spawns a new server
+- Deploying to serverless/lambda environments with short-lived functions
+- Using container-per-request architectures
+- Server instances are frequently restarted
+
+❌ **Don't use when:**
+- You need to work with multiple bundles simultaneously
+- Running long-lived server instances (default mode works fine)
+- Bundle state can be maintained in memory
+
+### Configuration Details
+
+| Environment Variable | Default | Description |
+|---------------------|---------|-------------|
+| `MCP_SINGLE_BUNDLE_MODE` | `false` | Enable single bundle mode |
+| `PRESERVE_BUNDLES` | `false` | Keep bundle files on disk after cleanup |
+| `MCP_BUNDLE_STORAGE` | temp dir | Directory for persistent bundle storage |
+
+**Note**: `PRESERVE_BUNDLES=true` must be set with single bundle mode to ensure bundles persist across server restarts.
 
 ## Quick Start
 

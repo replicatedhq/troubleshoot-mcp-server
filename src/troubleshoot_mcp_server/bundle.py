@@ -257,6 +257,119 @@ class BundleManager:
         self._last_timeout_command: Optional[str] = None
         self._crash_recovery_info: Optional[dict] = None
 
+        # Single bundle mode: treat bundle presence as activation
+        self.single_bundle_mode = (
+            os.environ.get("MCP_SINGLE_BUNDLE_MODE", "false").lower() == "true"
+        )
+        if self.single_bundle_mode:
+            logger.info("Single bundle mode enabled: bundle presence = activation")
+
+    async def _auto_activate_bundle_if_exists(self) -> None:
+        """
+        Auto-activate bundle if single bundle mode is enabled and exactly one bundle exists.
+
+        This should be called on server startup to restore bundle state from disk.
+        Enforces single bundle invariant by cleaning up if multiple bundles found.
+        """
+        if not self.single_bundle_mode:
+            return
+
+        # Look for bundle directories in bundle_dir
+        try:
+            bundle_dirs = [d for d in self.bundle_dir.iterdir() if d.is_dir()]
+        except Exception as e:
+            logger.warning(f"Single bundle mode: error listing bundle directories: {e}")
+            return
+
+        if len(bundle_dirs) == 0:
+            logger.info("Single bundle mode: no bundle found, waiting for initialization")
+            return
+
+        if len(bundle_dirs) > 1:
+            logger.warning(
+                f"Single bundle mode: found {len(bundle_dirs)} bundles, cleaning up to enforce single bundle invariant"
+            )
+            for bundle_dir in bundle_dirs:
+                try:
+                    shutil.rmtree(bundle_dir, ignore_errors=True)
+                except Exception as e:
+                    logger.error(f"Error cleaning up bundle directory {bundle_dir}: {e}")
+            return
+
+        # Exactly one bundle - auto-activate it
+        bundle_dir = bundle_dirs[0]
+        bundle_id = bundle_dir.name
+        logger.info(f"Single bundle mode: auto-activating bundle {bundle_id}")
+
+        # Look for kubeconfig file in the bundle directory
+        kubeconfig_path = bundle_dir / "kubeconfig"
+
+        # Reconstruct BundleMetadata from directory
+        self.active_bundle = BundleMetadata(
+            id=bundle_id,
+            path=bundle_dir,
+            source="<restored-from-disk>",  # Bundle was persisted, source unknown
+            kubeconfig_path=kubeconfig_path,
+            initialized=True,
+            host_only_bundle=not kubeconfig_path.exists(),
+        )
+
+        # Attempt to restart sbctl process for the restored bundle
+        try:
+            await self._initialize_with_sbctl(bundle_dir / "bundle.tar.gz", bundle_dir)
+        except Exception as e:
+            logger.warning(
+                f"Could not restart sbctl for restored bundle (bundle may still be usable): {e}"
+            )
+
+    def _ensure_bundle_active(self) -> BundleMetadata:
+        """
+        Ensure a bundle is active. In single bundle mode, auto-discover from disk.
+
+        Raises:
+            RuntimeError: If no bundle is active and none found on disk
+
+        Returns:
+            BundleMetadata: The active bundle
+        """
+        if self.active_bundle:
+            return self.active_bundle
+
+        if self.single_bundle_mode:
+            # Try to auto-discover bundle from disk
+            try:
+                bundle_dirs = [d for d in self.bundle_dir.iterdir() if d.is_dir()]
+            except Exception as e:
+                logger.error(f"Error listing bundle directories: {e}")
+                raise RuntimeError(
+                    "No bundle is active. Please initialize a bundle first using the "
+                    "initialize_bundle tool. Provide a bundle URL or path to the "
+                    "initialize_bundle tool."
+                )
+
+            if len(bundle_dirs) == 1:
+                bundle_dir = bundle_dirs[0]
+                logger.info(f"Single bundle mode: auto-discovered bundle {bundle_dir.name}")
+
+                # Look for kubeconfig file in the bundle directory
+                kubeconfig_path = bundle_dir / "kubeconfig"
+
+                self.active_bundle = BundleMetadata(
+                    id=bundle_dir.name,
+                    path=bundle_dir,
+                    source="<restored-from-disk>",
+                    kubeconfig_path=kubeconfig_path,
+                    initialized=True,
+                    host_only_bundle=not kubeconfig_path.exists(),
+                )
+                return self.active_bundle
+
+        raise RuntimeError(
+            "No bundle is active. Please initialize a bundle first using the "
+            "initialize_bundle tool. Provide a bundle URL or path to the "
+            "initialize_bundle tool."
+        )
+
     async def initialize_bundle(self, source: str, force: bool = False) -> BundleMetadata:
         """
         Initialize a support bundle from a source.
@@ -276,6 +389,22 @@ class BundleManager:
             return self.active_bundle
 
         await self._cleanup_active_bundle()
+
+        # Single bundle mode: always clean up ALL existing bundles first (not just active)
+        if self.single_bundle_mode:
+            logger.info(
+                "Single bundle mode: cleaning up all existing bundles before initialization"
+            )
+            try:
+                for bundle_dir in self.bundle_dir.iterdir():
+                    if bundle_dir.is_dir():
+                        try:
+                            shutil.rmtree(bundle_dir, ignore_errors=True)
+                            logger.info(f"Cleaned up bundle directory: {bundle_dir}")
+                        except Exception as e:
+                            logger.error(f"Error cleaning up bundle directory {bundle_dir}: {e}")
+            except Exception as e:
+                logger.error(f"Error listing bundle directories for cleanup: {e}")
 
         logger.info(f"Initializing bundle from source: {source}")
         try:

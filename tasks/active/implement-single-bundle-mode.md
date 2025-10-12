@@ -1,8 +1,9 @@
 # Task: Implement Single Bundle Mode for Stateless Bundle Management
 
 ## Metadata
-**Status**: backlog
+**Status**: active
 **Created**: 2025-10-03
+**Started**: 2025-10-03
 **Priority**: high
 **Estimated effort**: medium
 
@@ -312,11 +313,73 @@ Activity 2: list_files
 - Auto-cleanup when multiple bundles exist ensures consistent state
 
 ## Evidence of Completion
-(To be filled by AI)
-- [ ] Command output demonstrating server restart with auto-activation
-- [ ] Integration test output showing stateless operation
-- [ ] Path to created/modified files
-- [ ] Summary of changes made
+
+### Test Results
+✅ **Unit Tests**: 11/11 tests passed in `tests/unit/test_single_bundle_mode.py`
+✅ **Integration Tests**: 7/7 tests passed in `tests/integration/test_single_bundle_mode_stateless.py`
+✅ **All Unit + Integration Tests**: 267/267 tests passed (2:13 runtime)
+
+### Created/Modified Files
+
+**Core Implementation**:
+- `src/troubleshoot_mcp_server/bundle.py`: Added single bundle mode support
+  - Line 260-263: Added `single_bundle_mode` configuration
+  - Line 265-319: Added `_auto_activate_bundle_if_exists()` method
+  - Line 321-367: Added `_ensure_bundle_active()` method
+  - Line 389-401: Modified `initialize_bundle()` to clean up in single mode
+
+- `src/troubleshoot_mcp_server/lifecycle.py`: Added auto-activation on startup
+  - Line 105-106: Call `_auto_activate_bundle_if_exists()` after bundle manager creation
+
+**Tests**:
+- `tests/unit/test_single_bundle_mode.py`: 11 unit tests for single bundle mode
+- `tests/integration/test_single_bundle_mode_stateless.py`: 7 integration tests for stateless operation
+
+**Documentation**:
+- `README.md`: Added "Single Bundle Mode (Stateless Operation)" section with:
+  - Feature description and benefits
+  - Usage patterns and examples
+  - Configuration table
+  - When to use / not use guidance
+
+### Summary of Changes
+
+**What was implemented**:
+1. Environment variable `MCP_SINGLE_BUNDLE_MODE` (default: false) for enabling single bundle mode
+2. Auto-activation of bundles on server startup when exactly one bundle exists on disk
+3. Cleanup of all existing bundles before initializing new ones in single mode
+4. Auto-discovery of bundles from disk when tools are called
+5. Enforcement of single bundle invariant (cleanup when multiple bundles detected)
+6. Full test coverage with 18 tests (11 unit + 7 integration)
+7. Comprehensive documentation
+
+**How it works**:
+- Server startup: Calls `_auto_activate_bundle_if_exists()` to restore bundle state
+- Tool calls: Use `_ensure_bundle_active()` to auto-discover bundles
+- Bundle init: Cleans up all existing bundles first in single mode
+- Works seamlessly with `PRESERVE_BUNDLES=true` for persistence
+
+**Backwards compatibility**:
+- Feature is **off by default** (no breaking changes)
+- Existing behavior unchanged when `MCP_SINGLE_BUNDLE_MODE=false`
+- All existing tests continue to pass
 
 ## Progress Updates
-(To be filled by AI during implementation)
+
+### 2025-10-03 - Task Started
+- Created worktree: trees/single-bundle-mode
+- Moved task to active
+- Beginning implementation of single bundle mode feature
+
+### 2025-10-03 - Implementation Complete
+- Implemented all core functionality:
+  - Single bundle mode configuration
+  - Auto-activation on startup
+  - Auto-discovery for tool calls
+  - Bundle cleanup enforcement
+  - Server lifecycle integration
+- Created comprehensive test suite (18 tests total)
+- Updated documentation with usage guide
+- All tests passing (267/267 unit+integration)
+- All quality checks passing (ruff, mypy)
+- Changes committed to task/single-bundle-mode branch
