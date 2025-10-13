@@ -5,6 +5,8 @@ These tests verify that single bundle mode enables stateless operation
 by simulating server restarts and ensuring bundles are auto-activated.
 """
 
+import asyncio
+import logging
 import os
 import tempfile
 from pathlib import Path
@@ -15,6 +17,8 @@ import pytest_asyncio
 
 from troubleshoot_mcp_server.bundle import BundleManager
 from troubleshoot_mcp_server.kubectl import KubectlExecutor
+
+logger = logging.getLogger(__name__)
 
 # Mark all tests in this file as integration tests
 pytestmark = pytest.mark.integration
@@ -360,3 +364,81 @@ async def test_sbctl_auto_restart_real_bundle(persistent_bundle_dir, test_suppor
 
         # Cleanup
         await manager2.cleanup()
+
+
+@pytest.mark.asyncio
+async def test_sbctl_restart_deletes_stale_kubeconfig(persistent_bundle_dir, test_support_bundle):
+    """
+    Test that _restart_sbctl_process deletes stale kubeconfig before restart.
+
+    This test verifies the fix for the stale kubeconfig port bug where:
+    - An old kubeconfig with a stale port survives across restarts
+    - The fix ensures the stale kubeconfig is deleted before sbctl restarts
+
+    This test should FAIL before the fix and PASS after the fix.
+    """
+    with patch.dict(os.environ, {"MCP_SINGLE_BUNDLE_MODE": "true", "PRESERVE_BUNDLES": "true"}):
+        manager = BundleManager(persistent_bundle_dir)
+
+        # Initialize with real bundle - starts real sbctl
+        bundle = await manager.initialize_bundle(str(test_support_bundle))
+        assert bundle.initialized is True
+        assert manager.sbctl_process is not None
+
+        kubeconfig_path = bundle.kubeconfig_path
+        assert kubeconfig_path.exists()
+
+        # Simulate sbctl crash
+        await manager._terminate_sbctl_process()
+        assert manager.sbctl_process is None or manager.sbctl_process.returncode is not None
+
+        # Create a STALE kubeconfig with a fake port that will never work
+        stale_kubeconfig = """apiVersion: v1
+clusters:
+- cluster:
+    insecure-skip-tls-verify: true
+    server: http://127.0.0.1:99999
+  name: sb
+contexts:
+- context:
+    cluster: sb
+    user: sb
+  name: sb
+current-context: sb
+kind: Config
+preferences: {}
+users:
+- name: sb
+  user:
+    client-certificate-data: LS0=
+    client-key-data: LS0=
+"""
+        kubeconfig_path.write_text(stale_kubeconfig)
+        assert kubeconfig_path.exists(), "Stale kubeconfig should exist"
+        assert "99999" in kubeconfig_path.read_text(), "Stale kubeconfig should contain port 99999"
+
+        # Now restart sbctl - it should DELETE the stale kubeconfig
+        restart_success = await manager._restart_sbctl_process()
+        assert restart_success, "sbctl restart should succeed"
+
+        # **CRITICAL ASSERTION**: Verify the stale kubeconfig was DELETED
+        # This is the core fix - ensuring the stale kubeconfig doesn't persist
+        # Note: We're not testing if a NEW kubeconfig is created (that's sbctl's job)
+        # We're only testing that the STALE one is removed
+        await asyncio.sleep(1)  # Give a moment for any filesystem operations to complete
+
+        if kubeconfig_path.exists():
+            # If a kubeconfig exists, it should NOT be the stale one with port 99999
+            current_config = kubeconfig_path.read_text()
+            assert "99999" not in current_config, (
+                f"Stale kubeconfig with port 99999 should have been deleted! "
+                f"Current content:\n{current_config}"
+            )
+            logger.info("SUCCESS: New kubeconfig created without stale port 99999")
+        else:
+            # Kubeconfig doesn't exist - that's OK, it means the stale one was deleted
+            # (sbctl might not recreate it when serving from a directory)
+            logger.info("SUCCESS: Stale kubeconfig was deleted")
+
+        # Cleanup
+        await manager.cleanup()

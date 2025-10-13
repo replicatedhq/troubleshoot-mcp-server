@@ -316,6 +316,19 @@ class BundleManager:
 
         # Attempt to restart sbctl process for the restored bundle
         try:
+            # Delete stale kubeconfig before attempting restart
+            # This ensures sbctl creates a fresh kubeconfig with the correct port
+            if kubeconfig_path.exists():
+                try:
+                    logger.info(
+                        f"Deleting stale kubeconfig before auto-activate restart: {kubeconfig_path}"
+                    )
+                    kubeconfig_path.unlink()
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to delete stale kubeconfig during auto-activate (continuing): {e}"
+                    )
+
             await self._initialize_with_sbctl(bundle_dir / "bundle.tar.gz", bundle_dir)
         except Exception as e:
             logger.warning(
@@ -1620,6 +1633,22 @@ class BundleManager:
 
             # Clear stderr buffer for fresh start
             self._stderr_buffer.clear()
+
+            # Delete stale kubeconfig before restart
+            # This ensures sbctl creates a fresh kubeconfig with the new port
+            if self.active_bundle and self.active_bundle.kubeconfig_path.exists():
+                try:
+                    logger.warning(
+                        f"Deleting stale kubeconfig before sbctl restart: {self.active_bundle.kubeconfig_path}"
+                    )
+                    self.active_bundle.kubeconfig_path.unlink()
+                except Exception as e:
+                    logger.warning(f"Failed to delete stale kubeconfig (continuing anyway): {e}")
+            else:
+                logger.warning(
+                    f"Skipping kubeconfig deletion (active_bundle={self.active_bundle is not None}, "
+                    f"exists={self.active_bundle.kubeconfig_path.exists() if self.active_bundle else 'N/A'})"
+                )
 
             # Restart sbctl with the same bundle
             bundle_path = self.active_bundle.path
