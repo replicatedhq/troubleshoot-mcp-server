@@ -2033,26 +2033,28 @@ class BundleManager:
         """
         # First check if sbctl process is running
         if not self.sbctl_process or self.sbctl_process.returncode is not None:
-            # Detect if this is a crash that we should recover from
-            if (
-                self.active_bundle
-                and self.sbctl_process
-                and self.sbctl_process.returncode is not None
-            ):
-                # sbctl process has crashed - attempt automatic restart
-                exit_code = self.sbctl_process.returncode
-                logger.warning(
-                    f"sbctl process crashed with exit code {exit_code}, attempting automatic restart"
-                )
+            # Detect if this is a crash or missing process that we should recover from
+            if self.active_bundle and self.active_bundle.initialized:
+                # Case 1: sbctl process crashed (process exists with non-None returncode)
+                # Case 2: bundle restored from disk but sbctl not started (process is None)
+                if self.sbctl_process and self.sbctl_process.returncode is not None:
+                    exit_code = self.sbctl_process.returncode
+                    logger.warning(
+                        f"sbctl process crashed with exit code {exit_code}, attempting automatic restart"
+                    )
+                else:
+                    logger.warning(
+                        "sbctl process is not running for initialized bundle, attempting automatic restart"
+                    )
 
                 try:
                     restart_successful = await self._restart_sbctl_process()
                     if restart_successful:
-                        logger.info("sbctl process restarted successfully after crash")
+                        logger.info("sbctl process restarted successfully")
                         # Don't return True immediately - fall through to API server check
                         # The restarted process needs time to initialize
                     else:
-                        logger.error("Failed to restart sbctl process after crash")
+                        logger.error("Failed to restart sbctl process")
                         return False
                 except Exception as e:
                     logger.error(f"Exception during sbctl restart: {e}")
@@ -2072,10 +2074,15 @@ class BundleManager:
             kubeconfig_path = self.active_bundle.kubeconfig_path
         else:
             # Try to find kubeconfig in current directory (where sbctl might create it)
-            current_dir_kubeconfig = Path.cwd() / "kubeconfig"
-            if current_dir_kubeconfig.exists():
-                logger.info(f"Found kubeconfig in current directory: {current_dir_kubeconfig}")
-                kubeconfig_path = current_dir_kubeconfig
+            try:
+                current_dir_kubeconfig = Path.cwd() / "kubeconfig"
+                if current_dir_kubeconfig.exists():
+                    logger.info(f"Found kubeconfig in current directory: {current_dir_kubeconfig}")
+                    kubeconfig_path = current_dir_kubeconfig
+            except (FileNotFoundError, OSError):
+                # Current directory may not exist (e.g., in tests or after directory changes)
+                logger.debug("Could not access current directory for kubeconfig lookup")
+                pass
 
         # Try to parse kubeconfig if found
         if kubeconfig_path:

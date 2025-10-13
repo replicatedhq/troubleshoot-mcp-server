@@ -246,3 +246,117 @@ async def test_kubectl_executor_uses_auto_activated_bundle(
         bundle = manager2._ensure_bundle_active()
         assert bundle is not None
         assert bundle.kubeconfig_path is not None
+
+
+@pytest.mark.asyncio
+async def test_check_api_server_auto_restarts_sbctl_after_restore(
+    persistent_bundle_dir, test_support_bundle
+):
+    """
+    Test that check_api_server_available auto-restarts sbctl when bundle is restored.
+
+    This addresses the scenario where:
+    1. Bundle is initialized with sbctl running
+    2. Server restarts (sbctl process dies)
+    3. Bundle is auto-activated from disk (initialized=True, but sbctl_process=None)
+    4. check_api_server_available is called and should auto-restart sbctl
+    """
+    # === PHASE 1: Initialize bundle with sbctl ===
+    with patch.dict(os.environ, {"MCP_SINGLE_BUNDLE_MODE": "true", "PRESERVE_BUNDLES": "true"}):
+        manager1 = BundleManager(persistent_bundle_dir)
+        manager1._initialize_with_sbctl = AsyncMock(
+            return_value=persistent_bundle_dir / "fake_bundle" / "kubeconfig"
+        )
+        manager1._start_sbctl_process = AsyncMock()
+
+        bundle = await manager1.initialize_bundle(str(test_support_bundle))
+        assert bundle.initialized is True
+
+        # Simulate server shutdown (sbctl process dies)
+        await manager1._terminate_sbctl_process()
+
+    # === PHASE 2: New server - bundle restored but sbctl not running ===
+    with patch.dict(os.environ, {"MCP_SINGLE_BUNDLE_MODE": "true", "PRESERVE_BUNDLES": "true"}):
+        manager2 = BundleManager(persistent_bundle_dir)
+
+        # Auto-activate finds the bundle but doesn't start sbctl (mocked to fail silently)
+        manager2._initialize_with_sbctl = AsyncMock(
+            side_effect=Exception("sbctl start failed during auto-activate")
+        )
+        await manager2._auto_activate_bundle_if_exists()
+
+        # Verify bundle was restored but sbctl is not running
+        assert manager2.active_bundle is not None
+        assert manager2.active_bundle.initialized is True
+        assert manager2.sbctl_process is None
+
+        # Mock _restart_sbctl_process to verify it gets called
+        manager2._restart_sbctl_process = AsyncMock(return_value=True)
+
+        # Call check_api_server_available - should trigger auto-restart
+        # Note: This will still return False because we're mocking, but the key
+        # is that _restart_sbctl_process should be called
+        result = await manager2.check_api_server_available()
+
+        # Verify sbctl restart was attempted
+        manager2._restart_sbctl_process.assert_called_once()
+
+        # The result depends on whether the restart succeeded and API is available
+        # In this mock scenario, restart returns True but API check may still fail
+        assert isinstance(result, bool)
+
+
+@pytest.mark.asyncio
+async def test_sbctl_auto_restart_real_bundle(persistent_bundle_dir, test_support_bundle):
+    """
+    REAL integration test: Verify sbctl auto-restarts after server restart.
+
+    No mocks - uses real sbctl process to verify:
+    1. Bundle initialized with real sbctl running
+    2. Server restart simulated (sbctl terminated)
+    3. New manager instance auto-discovers bundle
+    4. check_api_server_available() auto-restarts sbctl
+    5. System fully recovers with sbctl running
+    """
+    # === PHASE 1: Initialize bundle with REAL sbctl ===
+    with patch.dict(os.environ, {"MCP_SINGLE_BUNDLE_MODE": "true", "PRESERVE_BUNDLES": "true"}):
+        manager1 = BundleManager(persistent_bundle_dir)
+
+        # Initialize with real bundle - starts real sbctl
+        bundle = await manager1.initialize_bundle(str(test_support_bundle))
+        assert bundle.initialized is True
+
+        # Verify sbctl process is actually running
+        assert manager1.sbctl_process is not None
+        assert manager1.sbctl_process.returncode is None, "sbctl should be running"
+
+        bundle_id = bundle.id
+
+        # Simulate server shutdown - terminate sbctl
+        await manager1._terminate_sbctl_process()
+        assert manager1.sbctl_process is None or manager1.sbctl_process.returncode is not None
+
+    # === PHASE 2: New server - simulate restart ===
+    with patch.dict(os.environ, {"MCP_SINGLE_BUNDLE_MODE": "true", "PRESERVE_BUNDLES": "true"}):
+        manager2 = BundleManager(persistent_bundle_dir)
+
+        # Auto-activate finds bundle on disk
+        await manager2._auto_activate_bundle_if_exists()
+
+        # Bundle should be restored
+        assert manager2.active_bundle is not None
+        assert manager2.active_bundle.id == bundle_id
+        assert manager2.active_bundle.initialized is True
+
+        # sbctl might not be running yet (depends on _auto_activate success)
+        # This is the scenario we're testing
+
+        # Call check_api_server_available - should auto-restart sbctl if needed
+        await manager2.check_api_server_available()
+
+        # KEY ASSERTION: sbctl should now be running
+        assert manager2.sbctl_process is not None, "sbctl should be running after check"
+        assert manager2.sbctl_process.returncode is None, "sbctl process should be alive"
+
+        # Cleanup
+        await manager2.cleanup()
