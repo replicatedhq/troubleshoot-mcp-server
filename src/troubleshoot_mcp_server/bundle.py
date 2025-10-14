@@ -329,7 +329,47 @@ class BundleManager:
                         f"Failed to delete stale kubeconfig during auto-activate (continuing): {e}"
                     )
 
-            await self._initialize_with_sbctl(bundle_dir / "bundle.tar.gz", bundle_dir)
+            # FIX: Ensure bundle is extracted before starting sbctl
+            extract_dir = bundle_dir / "extracted"
+            bundle_tarball = bundle_dir / "bundle.tar.gz"
+
+            # Check if extraction is needed (dir doesn't exist or is empty)
+            needs_extraction = not extract_dir.exists()
+            if extract_dir.exists():
+                try:
+                    # Check if directory is empty
+                    if not any(extract_dir.iterdir()):
+                        needs_extraction = True
+                        logger.info("Auto-activation: extracted/ exists but is empty, will re-extract")
+                except Exception as e:
+                    logger.warning(f"Error checking extracted/ contents: {e}")
+                    needs_extraction = True
+
+            if needs_extraction and bundle_tarball.exists():
+                logger.info(f"Auto-activation: extracting bundle to {extract_dir}")
+                extract_dir.mkdir(exist_ok=True)
+
+                import tarfile
+                from pathlib import PurePath
+
+                with tarfile.open(bundle_tarball, "r:gz") as tar:
+                    members = tar.getmembers()
+                    logger.info(f"Auto-activation: extracting {len(members)} entries")
+
+                    # Sanitize paths
+                    safe_members = []
+                    for member in members:
+                        if member.name.startswith(("/", "../")):
+                            member.name = PurePath(member.name).name
+                        safe_members.append(member)
+
+                    tar.extractall(path=extract_dir, members=safe_members, filter="data")
+
+                # Count extracted files
+                file_count = sum(1 for _ in extract_dir.rglob("*") if _.is_file())
+                logger.info(f"Auto-activation: extracted {file_count} files")
+
+            await self._initialize_with_sbctl(bundle_tarball, bundle_dir)
         except Exception as e:
             logger.warning(
                 f"Could not restart sbctl for restored bundle (bundle may still be usable): {e}"
