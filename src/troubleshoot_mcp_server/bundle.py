@@ -464,8 +464,20 @@ class BundleManager:
             bundle_output_dir = self.bundle_dir / bundle_id
             bundle_output_dir.mkdir(parents=True, exist_ok=True)
 
+            # FIX: Copy the tarball into bundle directory for auto-activation persistence
+            # Auto-activation looks for bundle.tar.gz in the bundle directory
+            if source.startswith(("http://", "https://")):
+                bundle_tarball_dest = bundle_output_dir / "bundle.tar.gz"
+                logger.info(f"Copying tarball for persistence: {bundle_path} -> {bundle_tarball_dest}")
+                shutil.copy2(bundle_path, bundle_tarball_dest)
+                # Use the copied tarball for initialization
+                bundle_path_for_init = bundle_tarball_dest
+            else:
+                # Local file - use as-is
+                bundle_path_for_init = bundle_path
+
             # Initialize the bundle with sbctl
-            kubeconfig_path = await self._initialize_with_sbctl(bundle_path, bundle_output_dir)
+            kubeconfig_path = await self._initialize_with_sbctl(bundle_path_for_init, bundle_output_dir)
 
             # Handle case where no kubeconfig was created (host-only bundle)
             if self._host_only_bundle:
