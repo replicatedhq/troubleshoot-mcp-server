@@ -12,9 +12,9 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
-from .server import mcp, shutdown
 from .config import get_recommended_client_config
 from .lifecycle import setup_signal_handlers, is_shutdown_requested
+# NOTE: .server import delayed to after env var configuration
 
 logger = logging.getLogger(__name__)
 
@@ -128,6 +128,12 @@ def main(args: Optional[List[str]] = None) -> None:
         mcp_mode = not sys.stdin.isatty()
         transport_mode = "stdio" if mcp_mode else "sse"
 
+    # CRITICAL: Configure FastMCP settings BEFORE importing server module
+    # FastMCP reads these when the module is imported
+    if transport_mode != "stdio":
+        os.environ["FASTMCP_HOST"] = parsed_args.host
+        os.environ["FASTMCP_PORT"] = str(parsed_args.port)
+
     # Set up logging
     setup_logging(parsed_args.verbose, mcp_mode)
 
@@ -168,15 +174,13 @@ def main(args: Optional[List[str]] = None) -> None:
         # Set up signal handlers specifically for stdio mode
         setup_signal_handlers()
 
+    # CRITICAL: Import server AFTER configuring environment variables
+    # FastMCP Settings are read when the module is imported
+    from .server import mcp, shutdown as server_shutdown
+
     # Register shutdown function with atexit to ensure cleanup on normal exit
     logger.debug("Registering atexit shutdown handler")
-    atexit.register(shutdown)
-
-    # Configure FastMCP settings via environment variables (if not stdio)
-    if transport_mode != "stdio":
-        os.environ["FASTMCP_HOST"] = parsed_args.host
-        os.environ["FASTMCP_PORT"] = str(parsed_args.port)
-        logger.info(f"Configured FastMCP: {parsed_args.host}:{parsed_args.port}")
+    atexit.register(server_shutdown)
 
     # Run the FastMCP server with specified transport
     try:
@@ -190,17 +194,17 @@ def main(args: Optional[List[str]] = None) -> None:
         # After mcp.run() returns, check if shutdown was requested via signal
         if is_shutdown_requested():
             logger.info("Shutdown requested via signal, performing cleanup")
-            shutdown()
+            server_shutdown()
             # Let Python exit naturally without sys.exit()
             return
     except KeyboardInterrupt:
         logger.info("Server stopped by user")
         # Explicitly call shutdown here to handle Ctrl+C case
-        shutdown()
+        server_shutdown()
     except Exception as e:
         logger.exception(f"Error running server: {e}")
         # Ensure cleanup on error exit
-        shutdown()
+        server_shutdown()
         sys.exit(1)
 
 
