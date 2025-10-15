@@ -29,8 +29,17 @@ from .size_limiter import SizeLimiter
 logger = logging.getLogger(__name__)
 
 # Create FastMCP server with lifecycle management
-# We don't enable stdio mode here - it will be configured in __main__.py
-mcp = FastMCP("troubleshoot-mcp-server", lifespan=app_lifespan)
+# Read host/port from environment if provided (for SSE transport)
+# __main__.py sets FASTMCP_HOST and FASTMCP_PORT before importing this module
+_host = os.getenv("FASTMCP_HOST", "127.0.0.1")
+_port = int(os.getenv("FASTMCP_PORT", "8000"))
+
+mcp = FastMCP(
+    "troubleshoot-mcp-server",
+    lifespan=app_lifespan,
+    host=_host,
+    port=_port,
+)
 
 # Check if list_bundles tool should be enabled
 # Hidden by default to avoid confusing AI agents about bundle persistence
