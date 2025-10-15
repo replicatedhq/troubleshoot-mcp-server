@@ -172,15 +172,19 @@ def main(args: Optional[List[str]] = None) -> None:
     logger.debug("Registering atexit shutdown handler")
     atexit.register(shutdown)
 
+    # Configure FastMCP settings via environment variables (if not stdio)
+    if transport_mode != "stdio":
+        os.environ["FASTMCP_HOST"] = parsed_args.host
+        os.environ["FASTMCP_PORT"] = str(parsed_args.port)
+        logger.info(f"Configured FastMCP: {parsed_args.host}:{parsed_args.port}")
+
     # Run the FastMCP server with specified transport
     try:
         logger.debug(f"Starting FastMCP server with {transport_mode} transport")
 
         if transport_mode == "sse":
-            mcp.run(transport="sse", host=parsed_args.host, port=parsed_args.port)
-        elif transport_mode == "http":
-            mcp.run(transport="http", host=parsed_args.host, port=parsed_args.port)
-        else:  # stdio
+            mcp.run(transport="sse")
+        else:  # stdio (http not implemented yet)
             mcp.run()
 
         # After mcp.run() returns, check if shutdown was requested via signal
