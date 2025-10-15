@@ -83,6 +83,24 @@ def parse_args(args: Optional[List[str]] = None) -> argparse.Namespace:
         action="store_true",
         help="Show recommended MCP client configuration",
     )
+    parser.add_argument(
+        "--transport",
+        type=str,
+        choices=["stdio", "sse"],
+        help="Transport protocol (stdio for local/subprocess, sse for hosted server)",
+    )
+    parser.add_argument(
+        "--host",
+        type=str,
+        default="0.0.0.0",
+        help="Host to bind SSE server (default: 0.0.0.0)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=9000,
+        help="Port for SSE server (default: 9000)",
+    )
     return parser.parse_args(args)
 
 
@@ -100,17 +118,24 @@ def main(args: Optional[List[str]] = None) -> None:
         handle_show_config()
         return  # This should never be reached as handle_show_config exits
 
-    # Detect if we're running in MCP mode (stdin is not a terminal)
-    mcp_mode = not sys.stdin.isatty()
+    # Determine transport mode
+    if parsed_args.transport:
+        # Explicit transport specified via CLI
+        transport_mode = parsed_args.transport
+        mcp_mode = transport_mode == "stdio"
+    else:
+        # Auto-detect: stdin is not a terminal = stdio mode
+        mcp_mode = not sys.stdin.isatty()
+        transport_mode = "stdio" if mcp_mode else "sse"
 
     # Set up logging
     setup_logging(parsed_args.verbose, mcp_mode)
 
     # Log startup information
-    if not mcp_mode:
-        logger.info("Starting MCP server for Kubernetes support bundles")
+    if transport_mode == "stdio":
+        logger.debug("Starting MCP server in stdio mode")
     else:
-        logger.debug("Starting MCP server for Kubernetes support bundles (stdio mode)")
+        logger.info(f"Starting MCP server with {transport_mode} transport on {parsed_args.host}:{parsed_args.port}")
 
     # Process bundle directory
     bundle_dir = None
@@ -147,10 +172,16 @@ def main(args: Optional[List[str]] = None) -> None:
     logger.debug("Registering atexit shutdown handler")
     atexit.register(shutdown)
 
-    # Run the FastMCP server - this handles stdin/stdout automatically
+    # Run the FastMCP server with specified transport
     try:
-        logger.debug("Starting FastMCP server")
-        mcp.run()
+        logger.debug(f"Starting FastMCP server with {transport_mode} transport")
+
+        if transport_mode == "sse":
+            mcp.run(transport="sse", host=parsed_args.host, port=parsed_args.port)
+        elif transport_mode == "http":
+            mcp.run(transport="http", host=parsed_args.host, port=parsed_args.port)
+        else:  # stdio
+            mcp.run()
 
         # After mcp.run() returns, check if shutdown was requested via signal
         if is_shutdown_requested():
