@@ -86,8 +86,8 @@ def parse_args(args: Optional[List[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--transport",
         type=str,
-        choices=["stdio", "sse"],
-        help="Transport protocol (stdio for local/subprocess, sse for hosted server)",
+        choices=["stdio", "sse", "http"],
+        help="Transport protocol (stdio for local/subprocess, sse for hosted SSE server, http for REST API)",
     )
     parser.add_argument(
         "--host",
@@ -182,16 +182,33 @@ def main(args: Optional[List[str]] = None) -> None:
     logger.debug("Registering atexit shutdown handler")
     atexit.register(server_shutdown)
 
-    # Run the FastMCP server with specified transport
+    # Run the server with specified transport
     try:
-        logger.debug(f"Starting FastMCP server with {transport_mode} transport")
+        if transport_mode == "http":
+            # HTTP REST API mode (for Temporal workflows)
+            logger.debug(f"Starting HTTP REST server on {parsed_args.host}:{parsed_args.port}")
 
-        if transport_mode == "sse":
+            # Import HTTP server module
+            from .http_server import run_http_server
+            import anyio
+
+            # Run HTTP server
+            anyio.run(run_http_server,
+                     parsed_args.host,
+                     parsed_args.port,
+                     bundle_dir or Path("/tmp/bundles"))
+
+        elif transport_mode == "sse":
+            # SSE MCP protocol mode
+            logger.debug("Starting FastMCP server with SSE transport")
             mcp.run(transport="sse")
-        else:  # stdio (http not implemented yet)
+
+        else:
+            # stdio MCP protocol mode
+            logger.debug("Starting FastMCP server with stdio transport")
             mcp.run()
 
-        # After mcp.run() returns, check if shutdown was requested via signal
+        # After server returns, check if shutdown was requested via signal
         if is_shutdown_requested():
             logger.info("Shutdown requested via signal, performing cleanup")
             server_shutdown()

@@ -246,8 +246,12 @@ class BundleManager:
         """
         self.bundle_dir = bundle_dir or Path(tempfile.mkdtemp(prefix="k8s-bundle-"))
         self.bundle_dir.mkdir(parents=True, exist_ok=True)
-        self.active_bundle: Optional[BundleMetadata] = None
-        self.sbctl_process: Optional[asyncio.subprocess.Process] = None
+
+        # Track multiple concurrent bundles (CONCURRENT SUPPORT)
+        self.bundles: dict[str, BundleMetadata] = {}
+        self.sbctl_processes: dict[str, asyncio.subprocess.Process] = {}
+        self.active_bundle_id: Optional[str] = None
+
         self._host_only_bundle: bool = False
         self._termination_requested: bool = False
 
@@ -263,6 +267,34 @@ class BundleManager:
         )
         if self.single_bundle_mode:
             logger.info("Single bundle mode enabled: bundle presence = activation")
+
+    # Backward compatibility properties
+    @property
+    def active_bundle(self) -> Optional[BundleMetadata]:
+        """Get active bundle (legacy compatibility)."""
+        return self.bundles.get(self.active_bundle_id) if self.active_bundle_id else None
+
+    @active_bundle.setter
+    def active_bundle(self, metadata: Optional[BundleMetadata]) -> None:
+        """Set active bundle (legacy compatibility)."""
+        if metadata:
+            self.bundles[metadata.id] = metadata
+            self.active_bundle_id = metadata.id
+        else:
+            self.active_bundle_id = None
+
+    @property
+    def sbctl_process(self) -> Optional[asyncio.subprocess.Process]:
+        """Get active bundle's sbctl process (legacy compatibility)."""
+        return self.sbctl_processes.get(self.active_bundle_id) if self.active_bundle_id else None
+
+    @sbctl_process.setter
+    def sbctl_process(self, process: Optional[asyncio.subprocess.Process]) -> None:
+        """Set active bundle's sbctl process (legacy compatibility)."""
+        if process and self.active_bundle_id:
+            self.sbctl_processes[self.active_bundle_id] = process
+        elif not process and self.active_bundle_id:
+            self.sbctl_processes.pop(self.active_bundle_id, None)
 
     async def _auto_activate_bundle_if_exists(self) -> None:
         """
@@ -340,7 +372,9 @@ class BundleManager:
                     # Check if directory is empty
                     if not any(extract_dir.iterdir()):
                         needs_extraction = True
-                        logger.info("Auto-activation: extracted/ exists but is empty, will re-extract")
+                        logger.info(
+                            "Auto-activation: extracted/ exists but is empty, will re-extract"
+                        )
                 except Exception as e:
                     logger.warning(f"Error checking extracted/ contents: {e}")
                     needs_extraction = True
@@ -423,13 +457,16 @@ class BundleManager:
             "initialize_bundle tool."
         )
 
-    async def initialize_bundle(self, source: str, force: bool = False) -> BundleMetadata:
+    async def initialize_bundle(
+        self, source: str, force: bool = False, token: Optional[str] = None
+    ) -> BundleMetadata:
         """
         Initialize a support bundle from a source.
 
         Args:
             source: The source of the bundle (URL or local path)
             force: Whether to force re-initialization if a bundle is already active
+            token: Optional SBCTL token for authenticated downloads (overrides SBCTL_TOKEN env var)
 
         Returns:
             Metadata for the initialized bundle
@@ -463,7 +500,7 @@ class BundleManager:
         try:
             # Determine if the source is a URL or local file
             if source.startswith(("http://", "https://")):
-                bundle_path = await self._download_bundle(source)
+                bundle_path = await self._download_bundle(source, token=token)
             else:
                 # First, check if it's a full path
                 bundle_path = Path(source)
@@ -500,6 +537,9 @@ class BundleManager:
             # Generate a unique ID for the bundle
             bundle_id = self._generate_bundle_id(source)
 
+            # Set as active bundle BEFORE initialization so sbctl_process property works correctly
+            self.active_bundle_id = bundle_id
+
             # Create a directory for the bundle
             bundle_output_dir = self.bundle_dir / bundle_id
             bundle_output_dir.mkdir(parents=True, exist_ok=True)
@@ -508,7 +548,9 @@ class BundleManager:
             # Auto-activation looks for bundle.tar.gz in the bundle directory
             if source.startswith(("http://", "https://")):
                 bundle_tarball_dest = bundle_output_dir / "bundle.tar.gz"
-                logger.info(f"Moving tarball for persistence: {bundle_path} -> {bundle_tarball_dest}")
+                logger.info(
+                    f"Moving tarball for persistence: {bundle_path} -> {bundle_tarball_dest}"
+                )
                 shutil.move(str(bundle_path), str(bundle_tarball_dest))
                 # Use the moved tarball for initialization
                 bundle_path_for_init = bundle_tarball_dest
@@ -517,7 +559,9 @@ class BundleManager:
                 bundle_path_for_init = bundle_path
 
             # Initialize the bundle with sbctl
-            kubeconfig_path = await self._initialize_with_sbctl(bundle_path_for_init, bundle_output_dir)
+            kubeconfig_path = await self._initialize_with_sbctl(
+                bundle_path_for_init, bundle_output_dir
+            )
 
             # Handle case where no kubeconfig was created (host-only bundle)
             if self._host_only_bundle:
@@ -631,12 +675,15 @@ class BundleManager:
             or GITHUB_RAW_URL_PATTERN.match(url)
         )
 
-    async def _get_replicated_signed_url(self, original_url: str) -> str:
+    async def _get_replicated_signed_url(
+        self, original_url: str, token: Optional[str] = None
+    ) -> str:
         """
         Get the temporary signed download URL from the Replicated Vendor Portal API.
 
         Args:
             original_url: The original Replicated Vendor Portal URL.
+            token: Optional SBCTL token for authentication (overrides env vars)
 
         Returns:
             The signed download URL.
@@ -652,16 +699,16 @@ class BundleManager:
         slug = match.group(1)
         logger.info(f"Detected Replicated Vendor Portal URL with slug: {slug}")
 
-        # Get token - SBCTL_TOKEN takes precedence over REPLICATED
-        token = os.environ.get("SBCTL_TOKEN") or os.environ.get("REPLICATED")
-        if not token:
+        # Get token - use parameter first, then SBCTL_TOKEN, then REPLICATED env var
+        auth_token = token or os.environ.get("SBCTL_TOKEN") or os.environ.get("REPLICATED")
+        if not auth_token:
             raise BundleDownloadError(
                 "Cannot download from Replicated Vendor Portal: "
                 "SBCTL_TOKEN or REPLICATED environment variable not set."
             )
 
         api_url = REPLICATED_API_ENDPOINT.format(slug=slug)
-        headers = {"Authorization": token, "Content-Type": "application/json"}
+        headers = {"Authorization": auth_token, "Content-Type": "application/json"}
 
         try:
             # === START RESTRUCTURE ===
@@ -904,12 +951,13 @@ class BundleManager:
         # This should not be reached, but add as safety
         raise BundleDownloadError("Failed to download from GitHub after all retries")
 
-    async def _download_bundle(self, url: str) -> Path:
+    async def _download_bundle(self, url: str, token: Optional[str] = None) -> Path:
         """
         Download a support bundle from a URL, handling Replicated Vendor Portal and GitHub URLs.
 
         Args:
             url: The URL to download the bundle from (can be original or signed)
+            token: Optional SBCTL token for authenticated downloads (overrides SBCTL_TOKEN env var)
 
         Returns:
             The path to the downloaded bundle
@@ -928,7 +976,7 @@ class BundleManager:
         # Check if it's a Replicated Vendor Portal URL
         if REPLICATED_VENDOR_URL_PATTERN.match(url):
             try:
-                actual_download_url = await self._get_replicated_signed_url(url)
+                actual_download_url = await self._get_replicated_signed_url(url, token=token)
                 # Log only after successfully getting the signed URL
                 logger.info(
                     f"Using signed URL for download: {actual_download_url[:80]}..."
@@ -974,9 +1022,10 @@ class BundleManager:
             download_headers = {}
             # Add auth token ONLY for non-Replicated URLs (signed URLs have auth embedded)
             if actual_download_url == original_url:  # Check if we are using the original URL
-                token = os.environ.get("SBCTL_TOKEN")
-                if token:
-                    download_headers["Authorization"] = f"Bearer {token}"
+                # Use passed token parameter or fall back to environment variable
+                auth_token = token or os.environ.get("SBCTL_TOKEN")
+                if auth_token:
+                    download_headers["Authorization"] = f"Bearer {auth_token}"
                     logger.debug("Added Authorization header for direct download.")
                 else:
                     logger.debug("No SBCTL_TOKEN found for direct download.")
@@ -1066,8 +1115,9 @@ class BundleManager:
         kubeconfig_path = output_dir / "kubeconfig"
 
         try:
-            # Kill any existing sbctl process
-            await self._terminate_sbctl_process()
+            # DON'T kill existing sbctl - concurrent bundles each need their own process
+            # Only kill if reinitializing the SAME bundle (handled by caller with force=True)
+            # await self._terminate_sbctl_process()  # REMOVED for concurrent support
 
             # Start sbctl in serve mode with the bundle in the output directory
             await self._start_sbctl_process(bundle_path, output_dir)
@@ -1746,11 +1796,17 @@ class BundleManager:
 
         os.chdir(output_dir)
 
+        # Find an available port for this sbctl instance (concurrent support)
+        port = self._find_available_port()
+        logger.debug(f"Allocated port {port} for sbctl")
+
         cmd = [
             "sbctl",
             "serve",
             "--support-bundle-location",
             str(bundle_path),
+            "--port",
+            str(port),
         ]
 
         logger.debug(f"Starting sbctl process: {' '.join(cmd)}")
@@ -1765,6 +1821,33 @@ class BundleManager:
         if self._stderr_monitor_task:
             self._stderr_monitor_task.cancel()
             self._stderr_monitor_task = None
+
+    def _find_available_port(self, start_port: int = 8080, max_attempts: int = 100) -> int:
+        """Find an available port for sbctl to bind to (concurrent support).
+
+        Args:
+            start_port: Port to start searching from
+            max_attempts: Maximum number of ports to try
+
+        Returns:
+            An available port number
+
+        Raises:
+            RuntimeError: If no available port found
+        """
+        for offset in range(max_attempts):
+            port = start_port + offset
+            try:
+                # Try to bind to the port to check availability
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.bind(("localhost", port))
+                    return port
+            except OSError:
+                # Port in use, try next
+                continue
+        raise RuntimeError(
+            f"No available ports found in range {start_port}-{start_port + max_attempts}"
+        )
 
     def _start_stderr_monitoring(self) -> None:
         """Start stderr monitoring after initialization is complete."""
