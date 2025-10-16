@@ -2102,9 +2102,18 @@ class BundleManager:
             # 1. Stop the sbctl process if it's running
             await self._terminate_sbctl_process()
 
-            # 2. Remove extracted bundle directories
+            # 2. Remove extracted bundle directories (ONLY if using temp storage)
             try:
                 if self.active_bundle.path and self.active_bundle.path.exists():
+                    # Don't delete bundles from persistent storage (MCP_BUNDLE_STORAGE)
+                    # Only clean up temporary bundles
+                    is_persistent_storage = os.getenv("MCP_BUNDLE_STORAGE") is not None
+                    if is_persistent_storage:
+                        logger.info(f"Keeping bundle in persistent storage: {self.active_bundle.id}")
+                        # Terminate sbctl but don't delete bundle files
+                        self.active_bundle = None
+                        return
+
                     # Get the bundle path before resetting active_bundle reference
                     bundle_path = self.active_bundle.path
                     logger.info(f"Removing extracted bundle directory: {bundle_path}")
