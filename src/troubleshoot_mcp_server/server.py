@@ -334,14 +334,24 @@ else:
 
 @mcp.tool()
 async def kubectl(
-    command: str, timeout: int = 5, json_output: bool = False, verbosity: Optional[str] = None
+    bundle_id: str,
+    command: str,
+    timeout: int = 5,
+    json_output: bool = False,
+    verbosity: Optional[str] = None,
 ) -> List[TextContent]:
     """
-    Execute kubectl commands against the initialized bundle's API server. Allows
-    running Kubernetes CLI commands to explore resources in the support bundle.
+    Execute kubectl commands against a bundle's Kubernetes API server.
 
-    BUNDLE REQUIREMENT: This tool requires an active bundle. If no bundle is currently
-    active, use `initialize_bundle` to load a bundle first.
+    BUNDLE ID REQUIREMENT: You must provide the bundle_id you received from initialize_bundle.
+    Each bundle has a unique ID returned when you call initialize_bundle. Use that ID with
+    this tool to run kubectl commands against that specific bundle.
+
+    Example workflow:
+      1. Call initialize_bundle(source="https://example.com/bundle.tar.gz")
+         → Returns: {"bundle_id": "bundle_abc123", "status": "ready"}
+      2. Call kubectl(bundle_id="bundle_abc123", command="get pods")
+         → Runs kubectl against bundle_abc123
 
     IMPORTANT: Accepts kubectl arguments only, not shell commands. Shell operations
     like pipes (|), redirects (>), and command chaining (&&) are not supported.
@@ -349,6 +359,7 @@ async def kubectl(
     ✅ Valid: 'get pods -l app=nginx'
 
     Args:
+        bundle_id: (string, required) The bundle ID returned from initialize_bundle
         command: (string, required) The kubectl command to execute (e.g., "get pods",
             "get nodes -o wide", "describe deployment nginx")
         timeout: (integer, optional) Timeout in seconds for the command. Defaults to 5.
@@ -366,19 +377,22 @@ async def kubectl(
     formatter = get_formatter(verbosity)
 
     try:
-        # Check if a bundle is initialized first
-        active_bundle = bundle_manager.get_active_bundle()
-        if active_bundle is None or not active_bundle.initialized:
+        # Get the specific bundle by ID
+        bundle = bundle_manager.bundles.get(bundle_id)
+        if bundle is None or not bundle.initialized:
             error_message = (
-                "No bundle is initialized. kubectl commands cannot be executed. "
+                f"Bundle '{bundle_id}' not found or not initialized. "
                 "Please initialize a bundle with the initialize_bundle tool first."
             )
-            logger.error("No bundle initialized for kubectl command")
+            logger.error(f"Bundle {bundle_id} not found for kubectl command")
             formatted_error = formatter.format_error(error_message)
             return check_response_size(formatted_error, "kubectl", formatter)
 
+        # Set as active bundle for this operation (thread-safe via property)
+        bundle_manager.active_bundle_id = bundle_id
+
         # Check if this is a host-only bundle
-        if active_bundle.host_only_bundle:
+        if bundle.host_only_bundle:
             error_message = (
                 "This support bundle contains only host resources and no cluster resources. "
                 "kubectl commands are not available for host-only bundles. "
@@ -468,16 +482,21 @@ async def kubectl(
 
 @mcp.tool()
 async def list_files(
-    path: str, recursive: bool = False, verbosity: Optional[str] = None
+    bundle_id: str, path: str, recursive: bool = False, verbosity: Optional[str] = None
 ) -> List[TextContent]:
     """
-    List files and directories within the support bundle. This tool lets you
-    explore the directory structure of the initialized bundle.
+    List files and directories within a support bundle.
 
-    BUNDLE REQUIREMENT: This tool requires an active bundle. If no bundle is currently
-    active, use `initialize_bundle` to load a bundle first.
+    BUNDLE ID REQUIREMENT: You must provide the bundle_id you received from initialize_bundle.
+
+    Example workflow:
+      1. Call initialize_bundle(source="https://example.com/bundle.tar.gz")
+         → Returns: {"bundle_id": "bundle_abc123", "status": "ready"}
+      2. Call list_files(bundle_id="bundle_abc123", path="/")
+         → Lists root directory of bundle_abc123
 
     Args:
+        bundle_id: (string, required) The bundle ID returned from initialize_bundle
         path: (string, required) The path within the bundle to list. Use "" or "/"
             for root directory. Path cannot contain directory traversal (e.g., "../").
         recursive: (boolean, optional) Whether to list files and directories recursively.
@@ -490,9 +509,21 @@ async def list_files(
         (file or dir), size, access time, modification time, and whether binary.
         Also returns metadata about the directory listing like total file and directory counts.
     """
+    bundle_manager = get_bundle_manager()
     formatter = get_formatter(verbosity)
 
     try:
+        # Get the specific bundle by ID
+        bundle = bundle_manager.bundles.get(bundle_id)
+        if bundle is None:
+            error_message = f"Bundle '{bundle_id}' not found. Use initialize_bundle first."
+            logger.error(f"Bundle {bundle_id} not found for list_files")
+            formatted_error = formatter.format_error(error_message)
+            return check_response_size(formatted_error, "list_files", formatter)
+
+        # Set as active bundle for this operation
+        bundle_manager.active_bundle_id = bundle_id
+
         result = await get_file_explorer().list_files(path, recursive)
         response = formatter.format_file_list(result)
         return check_response_size(response, "list_files", formatter)
@@ -516,16 +547,25 @@ async def list_files(
 
 @mcp.tool()
 async def read_file(
-    path: str, start_line: int = 0, end_line: Optional[int] = None, verbosity: Optional[str] = None
+    bundle_id: str,
+    path: str,
+    start_line: int = 0,
+    end_line: Optional[int] = None,
+    verbosity: Optional[str] = None,
 ) -> List[TextContent]:
     """
-    Read a file within the support bundle with optional line range filtering.
-    Displays file content with line numbers.
+    Read a file within a support bundle with optional line range filtering.
 
-    BUNDLE REQUIREMENT: This tool requires an active bundle. If no bundle is currently
-    active, use `initialize_bundle` to load a bundle first.
+    BUNDLE ID REQUIREMENT: You must provide the bundle_id you received from initialize_bundle.
+
+    Example workflow:
+      1. Call initialize_bundle(source="https://example.com/bundle.tar.gz")
+         → Returns: {"bundle_id": "bundle_abc123", "status": "ready"}
+      2. Call read_file(bundle_id="bundle_abc123", path="logs/app.log")
+         → Reads logs/app.log from bundle_abc123
 
     Args:
+        bundle_id: (string, required) The bundle ID returned from initialize_bundle
         path: (string, required) The path to the file within the bundle to read.
             Path cannot contain directory traversal (e.g., "../").
         start_line: (integer, optional) The line number to start reading from (0-indexed).
@@ -539,9 +579,21 @@ async def read_file(
         The content of the file with line numbers. For text files, displays the
         specified line range with line numbers. For binary files, displays a hex dump.
     """
+    bundle_manager = get_bundle_manager()
     formatter = get_formatter(verbosity)
 
     try:
+        # Get the specific bundle by ID
+        bundle = bundle_manager.bundles.get(bundle_id)
+        if bundle is None:
+            error_message = f"Bundle '{bundle_id}' not found. Use initialize_bundle first."
+            logger.error(f"Bundle {bundle_id} not found for read_file")
+            formatted_error = formatter.format_error(error_message)
+            return check_response_size(formatted_error, "read_file", formatter)
+
+        # Set as active bundle for this operation
+        bundle_manager.active_bundle_id = bundle_id
+
         result = await get_file_explorer().read_file(path, start_line, end_line)
         response = formatter.format_file_content(result)
         return check_response_size(response, "read_file", formatter)
@@ -565,6 +617,7 @@ async def read_file(
 
 @mcp.tool()
 async def grep_files(
+    bundle_id: str,
     pattern: str,
     path: str,
     recursive: bool = True,
@@ -576,13 +629,18 @@ async def grep_files(
     verbosity: Optional[str] = None,
 ) -> List[TextContent]:
     """
-    Search for patterns in files within the support bundle. Searches both file content
-    and filenames, making it useful for finding keywords, error messages, or identifying files.
+    Search for patterns in files within a support bundle.
 
-    BUNDLE REQUIREMENT: This tool requires an active bundle. If no bundle is currently
-    active, use `initialize_bundle` to load a bundle first.
+    BUNDLE ID REQUIREMENT: You must provide the bundle_id you received from initialize_bundle.
+
+    Example workflow:
+      1. Call initialize_bundle(source="https://example.com/bundle.tar.gz")
+         → Returns: {"bundle_id": "bundle_abc123", "status": "ready"}
+      2. Call grep_files(bundle_id="bundle_abc123", pattern="error", path="/logs")
+         → Searches for "error" in bundle_abc123's logs directory
 
     Args:
+        bundle_id: (string, required) The bundle ID returned from initialize_bundle
         pattern: (string, required) The pattern to search for. Supports regex syntax.
         path: (string, required) The path within the bundle to search. Use "" or "/"
             to search from root. Path cannot contain directory traversal (e.g., "../").
@@ -606,9 +664,21 @@ async def grep_files(
         Also includes search metadata such as the number of files searched
         and the total number of matches found.
     """
+    bundle_manager = get_bundle_manager()
     formatter = get_formatter(verbosity)
 
     try:
+        # Get the specific bundle by ID
+        bundle = bundle_manager.bundles.get(bundle_id)
+        if bundle is None:
+            error_message = f"Bundle '{bundle_id}' not found. Use initialize_bundle first."
+            logger.error(f"Bundle {bundle_id} not found for grep_files")
+            formatted_error = formatter.format_error(error_message)
+            return check_response_size(formatted_error, "grep_files", formatter)
+
+        # Set as active bundle for this operation
+        bundle_manager.active_bundle_id = bundle_id
+
         result = await get_file_explorer().grep_files(
             pattern,
             path,
