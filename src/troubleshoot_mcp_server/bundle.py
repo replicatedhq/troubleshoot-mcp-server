@@ -1796,17 +1796,13 @@ class BundleManager:
 
         os.chdir(output_dir)
 
-        # Find an available port for this sbctl instance (concurrent support)
-        port = self._find_available_port()
-        logger.debug(f"Allocated port {port} for sbctl")
-
+        # sbctl chooses its own port (no --port flag available)
+        # For concurrent support, sbctl will bind to different random ports automatically
         cmd = [
             "sbctl",
             "serve",
             "--support-bundle-location",
             str(bundle_path),
-            "--port",
-            str(port),
         ]
 
         logger.debug(f"Starting sbctl process: {' '.join(cmd)}")
