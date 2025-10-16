@@ -268,8 +268,8 @@ class BundleManager:
         if self.single_bundle_mode:
             logger.info("Single bundle mode enabled: bundle presence = activation")
 
-    def _load_bundle_from_disk_if_needed(self, bundle_id: str) -> Optional[BundleMetadata]:
-        """Lazy-load bundle from disk if not in memory (SSE lifecycle persistence).
+    async def _load_bundle_from_disk_if_needed(self, bundle_id: str) -> Optional[BundleMetadata]:
+        """Lazy-load bundle from disk if not in memory and restart sbctl if needed.
 
         Args:
             bundle_id: Bundle ID to load
@@ -279,6 +279,11 @@ class BundleManager:
         """
         # Check memory first
         if bundle_id in self.bundles:
+            # Check if sbctl process is still running for this bundle
+            if bundle_id not in self.sbctl_processes or self.sbctl_processes[bundle_id].returncode is not None:
+                # sbctl died - need to restart it
+                logger.info(f"Bundle {bundle_id} loaded but sbctl not running - restarting")
+                await self._restart_sbctl_for_bundle(bundle_id)
             return self.bundles[bundle_id]
 
         # Check disk
@@ -288,9 +293,10 @@ class BundleManager:
                 return None
 
             kubeconfig_path = bundle_path / "kubeconfig"
+            bundle_tarball = bundle_path / "bundle.tar.gz"
 
             # Validate it's a real bundle
-            if kubeconfig_path.exists() or (bundle_path / "bundle.tar.gz").exists():
+            if kubeconfig_path.exists() or bundle_tarball.exists():
                 metadata = BundleMetadata(
                     id=bundle_id,
                     source=f"disk:{bundle_id}",
@@ -301,13 +307,49 @@ class BundleManager:
                 )
                 # Cache in memory
                 self.bundles[bundle_id] = metadata
+                self.active_bundle_id = bundle_id
                 logger.info(f"Lazy-loaded bundle from disk: {bundle_id}")
+
+                # Restart sbctl for this bundle
+                if bundle_tarball.exists():
+                    await self._restart_sbctl_for_bundle(bundle_id)
+
                 return metadata
 
             return None
         except Exception as e:
             logger.warning(f"Error loading bundle {bundle_id} from disk: {e}")
             return None
+
+    async def _restart_sbctl_for_bundle(self, bundle_id: str) -> None:
+        """Restart sbctl process for a bundle loaded from disk.
+
+        Args:
+            bundle_id: Bundle ID to restart sbctl for
+        """
+        bundle = self.bundles.get(bundle_id)
+        if not bundle:
+            logger.warning(f"Cannot restart sbctl: bundle {bundle_id} not in bundles dict")
+            return
+
+        bundle_tarball = bundle.path / "bundle.tar.gz"
+        if not bundle_tarball.exists():
+            logger.warning(f"Cannot restart sbctl: bundle tarball not found for {bundle_id}")
+            return
+
+        try:
+            # Set as active so sbctl_process property works
+            old_active = self.active_bundle_id
+            self.active_bundle_id = bundle_id
+
+            # Start sbctl
+            await self._start_sbctl_process(bundle_tarball, bundle.path)
+            logger.info(f"Restarted sbctl for bundle {bundle_id}")
+
+            # Restore previous active
+            self.active_bundle_id = old_active
+        except Exception as e:
+            logger.error(f"Failed to restart sbctl for bundle {bundle_id}: {e}")
 
     # Backward compatibility properties
     @property
