@@ -1850,80 +1850,93 @@ class BundleManager:
         if self.sbctl_process and not self._stderr_monitor_task:
             self._stderr_monitor_task = asyncio.create_task(self._monitor_sbctl_stderr())
 
-    async def _terminate_sbctl_process(self) -> None:
+    async def _terminate_sbctl_process(self, bundle_id: Optional[str] = None) -> None:
         """
-        Terminate the sbctl process if it's running.
+        Terminate sbctl process(es).
 
-        This helper method centralizes process termination logic to avoid duplication.
+        Args:
+            bundle_id: Specific bundle ID to terminate. If None, terminates active bundle's process.
+                      For concurrent support, always specify bundle_id to avoid killing other bundles.
         """
-        # Cancel stderr monitoring task first
+        # Determine which bundle to terminate
+        target_bundle_id = bundle_id or self.active_bundle_id
+        if not target_bundle_id:
+            logger.debug("No bundle to terminate")
+            return
+
+        # Get the specific process for this bundle
+        process = self.sbctl_processes.get(target_bundle_id)
+        if not process:
+            logger.debug(f"No sbctl process for bundle {target_bundle_id}")
+            return
+
+        # Cancel stderr monitoring task first (NOTE: still global, may need per-bundle)
         if self._stderr_monitor_task:
             self._stderr_monitor_task.cancel()
             try:
-                await self._stderr_monitor_task
-            except asyncio.CancelledError:
+                await asyncio.wait_for(self._stderr_monitor_task, timeout=1.0)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
                 pass
             self._stderr_monitor_task = None
 
-        if self.sbctl_process:
-            self._termination_requested = True
+        self._termination_requested = True
+        try:
+            logger.debug(f"Terminating sbctl process for bundle {target_bundle_id}...")
+            process.terminate()
             try:
-                logger.debug("Terminating sbctl process...")
-                self.sbctl_process.terminate()
+                await asyncio.wait_for(process.wait(), timeout=3.0)
+                logger.debug(f"sbctl process for bundle {target_bundle_id} terminated gracefully")
+            except (asyncio.TimeoutError, ProcessLookupError) as e:
+                logger.warning(f"Failed to terminate sbctl process gracefully: {str(e)}")
                 try:
-                    await asyncio.wait_for(self.sbctl_process.wait(), timeout=3.0)
-                    logger.debug("sbctl process terminated gracefully")
-                except (asyncio.TimeoutError, ProcessLookupError) as e:
-                    logger.warning(f"Failed to terminate sbctl process gracefully: {str(e)}")
-                    if self.sbctl_process:
-                        try:
-                            logger.debug("Killing sbctl process...")
-                            self.sbctl_process.kill()
-                            logger.debug("sbctl process killed")
-                        except ProcessLookupError:
-                            logger.debug("Process already gone when trying to kill")
-            except Exception as e:
-                logger.warning(f"Error during process termination: {str(e)}")
+                    logger.debug(f"Killing sbctl process for bundle {target_bundle_id}...")
+                    process.kill()
+                    logger.debug("sbctl process killed")
+                except ProcessLookupError:
+                    logger.debug("Process already gone when trying to kill")
+        except Exception as e:
+            logger.warning(f"Error during process termination: {str(e)}")
 
-            # Always set to None regardless of success
-            self.sbctl_process = None
+        # Remove from dict
+        self.sbctl_processes.pop(target_bundle_id, None)
 
-            # Check for any lingering mock_sbctl.pid file in the output directory
-            # This helps us clean up in case the signal handling didn't work
-            if self.active_bundle and self.active_bundle.path.exists():
-                pid_file = self.active_bundle.path / "mock_sbctl.pid"
-                if pid_file.exists():
+        # Check for any lingering mock_sbctl.pid file in the output directory
+        # This helps us clean up in case the signal handling didn't work
+        bundle_metadata = self.bundles.get(target_bundle_id)
+        if bundle_metadata and bundle_metadata.path.exists():
+            pid_file = bundle_metadata.path / "mock_sbctl.pid"
+            if pid_file.exists():
+                try:
+                    with open(pid_file, "r") as f:
+                        pid = int(f.read().strip())
+
+                    # Try to kill the process if it exists
                     try:
-                        with open(pid_file, "r") as f:
-                            pid = int(f.read().strip())
-
-                        # Try to kill the process if it exists
+                        logger.debug(f"Killing leftover process with PID {pid}")
+                        os.kill(pid, signal.SIGTERM)
+                        # Wait briefly for termination
+                        await asyncio.sleep(0.5)
                         try:
-                            logger.debug(f"Killing leftover process with PID {pid}")
-                            os.kill(pid, signal.SIGTERM)
-                            # Wait briefly for termination
-                            await asyncio.sleep(0.5)
-                            try:
-                                # Check if process is gone
-                                os.kill(pid, 0)
-                                # If we get here, process still exists, try SIGKILL
-                                logger.debug(f"Process {pid} still exists, sending SIGKILL")
-                                os.kill(pid, signal.SIGKILL)
-                            except ProcessLookupError:
-                                logger.debug(f"Process {pid} terminated successfully")
+                            # Check if process is gone
+                            os.kill(pid, 0)
+                            # If we get here, process still exists, try SIGKILL
+                            logger.debug(f"Process {pid} still exists, sending SIGKILL")
+                            os.kill(pid, signal.SIGKILL)
                         except ProcessLookupError:
-                            logger.debug(f"Process {pid} not found")
-                        except PermissionError:
-                            logger.warning(f"Permission error trying to kill process {pid}")
+                            logger.debug(f"Process {pid} terminated successfully")
+                    except ProcessLookupError:
+                        logger.debug(f"Process {pid} not found")
+                    except PermissionError:
+                        logger.warning(f"Permission error trying to kill process {pid}")
 
-                        # Remove the PID file
-                        try:
-                            pid_file.unlink()
-                            logger.debug(f"Removed PID file: {pid_file}")
-                        except Exception as e:
-                            logger.warning(f"Failed to remove PID file: {e}")
+                    # Remove the PID file
+                    try:
+                        pid_file.unlink()
+                        logger.debug(f"Removed PID file: {pid_file}")
                     except Exception as e:
-                        logger.warning(f"Error handling leftover PID file: {e}")
+                        logger.warning(f"Failed to remove PID file: {e}")
+                except Exception as e:
+                    logger.warning(f"Error handling leftover PID file: {e}")
 
             # Cleanup any orphaned sbctl processes that might be running with the same bundle
             # This is important in container environments where processes might not be properly terminated
