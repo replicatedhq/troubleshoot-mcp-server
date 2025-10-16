@@ -268,6 +268,43 @@ class BundleManager:
         if self.single_bundle_mode:
             logger.info("Single bundle mode enabled: bundle presence = activation")
 
+        # Load existing bundles from disk (for SSE lifecycle persistence)
+        self._load_bundles_from_disk()
+
+    def _load_bundles_from_disk(self) -> None:
+        """Load existing bundles from disk into bundles dict.
+
+        This is critical for SSE mode where app_lifespan restarts per connection
+        but bundles persist on disk between connections.
+        """
+        try:
+            if not self.bundle_dir.exists():
+                return
+
+            bundle_dirs = [d for d in self.bundle_dir.iterdir() if d.is_dir()]
+            for bundle_dir in bundle_dirs:
+                bundle_id = bundle_dir.name
+                kubeconfig_path = bundle_dir / "kubeconfig"
+
+                # Check if this looks like a valid bundle
+                if kubeconfig_path.exists() or (bundle_dir / "bundle.tar.gz").exists():
+                    # Reconstruct metadata
+                    metadata = BundleMetadata(
+                        id=bundle_id,
+                        source=f"disk:{bundle_id}",  # Source unknown, use disk indicator
+                        path=bundle_dir,
+                        kubeconfig_path=kubeconfig_path,
+                        initialized=True,
+                        host_only_bundle=False,  # Will be detected if needed
+                    )
+                    self.bundles[bundle_id] = metadata
+                    logger.info(f"Loaded bundle from disk: {bundle_id}")
+
+            if self.bundles:
+                logger.info(f"Restored {len(self.bundles)} bundles from disk")
+        except Exception as e:
+            logger.warning(f"Error loading bundles from disk: {e}")
+
     # Backward compatibility properties
     @property
     def active_bundle(self) -> Optional[BundleMetadata]:
@@ -280,7 +317,9 @@ class BundleManager:
         if metadata:
             self.bundles[metadata.id] = metadata
             self.active_bundle_id = metadata.id
-            logger.info(f"SET active_bundle: bundle_id={metadata.id}, total_bundles={len(self.bundles)}")
+            logger.info(
+                f"SET active_bundle: bundle_id={metadata.id}, total_bundles={len(self.bundles)}"
+            )
         else:
             self.active_bundle_id = None
             logger.info("CLEAR active_bundle")
