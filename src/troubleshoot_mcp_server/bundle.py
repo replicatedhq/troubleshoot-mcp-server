@@ -268,42 +268,46 @@ class BundleManager:
         if self.single_bundle_mode:
             logger.info("Single bundle mode enabled: bundle presence = activation")
 
-        # Load existing bundles from disk (for SSE lifecycle persistence)
-        self._load_bundles_from_disk()
+    def _load_bundle_from_disk_if_needed(self, bundle_id: str) -> Optional[BundleMetadata]:
+        """Lazy-load bundle from disk if not in memory (SSE lifecycle persistence).
 
-    def _load_bundles_from_disk(self) -> None:
-        """Load existing bundles from disk into bundles dict.
+        Args:
+            bundle_id: Bundle ID to load
 
-        This is critical for SSE mode where app_lifespan restarts per connection
-        but bundles persist on disk between connections.
+        Returns:
+            BundleMetadata if found, None if not on disk
         """
+        # Check memory first
+        if bundle_id in self.bundles:
+            return self.bundles[bundle_id]
+
+        # Check disk
         try:
-            if not self.bundle_dir.exists():
-                return
+            bundle_path = self.bundle_dir / bundle_id
+            if not bundle_path.exists() or not bundle_path.is_dir():
+                return None
 
-            bundle_dirs = [d for d in self.bundle_dir.iterdir() if d.is_dir()]
-            for bundle_dir in bundle_dirs:
-                bundle_id = bundle_dir.name
-                kubeconfig_path = bundle_dir / "kubeconfig"
+            kubeconfig_path = bundle_path / "kubeconfig"
 
-                # Check if this looks like a valid bundle
-                if kubeconfig_path.exists() or (bundle_dir / "bundle.tar.gz").exists():
-                    # Reconstruct metadata
-                    metadata = BundleMetadata(
-                        id=bundle_id,
-                        source=f"disk:{bundle_id}",  # Source unknown, use disk indicator
-                        path=bundle_dir,
-                        kubeconfig_path=kubeconfig_path,
-                        initialized=True,
-                        host_only_bundle=False,  # Will be detected if needed
-                    )
-                    self.bundles[bundle_id] = metadata
-                    logger.info(f"Loaded bundle from disk: {bundle_id}")
+            # Validate it's a real bundle
+            if kubeconfig_path.exists() or (bundle_path / "bundle.tar.gz").exists():
+                metadata = BundleMetadata(
+                    id=bundle_id,
+                    source=f"disk:{bundle_id}",
+                    path=bundle_path,
+                    kubeconfig_path=kubeconfig_path,
+                    initialized=True,
+                    host_only_bundle=False,
+                )
+                # Cache in memory
+                self.bundles[bundle_id] = metadata
+                logger.info(f"Lazy-loaded bundle from disk: {bundle_id}")
+                return metadata
 
-            if self.bundles:
-                logger.info(f"Restored {len(self.bundles)} bundles from disk")
+            return None
         except Exception as e:
-            logger.warning(f"Error loading bundles from disk: {e}")
+            logger.warning(f"Error loading bundle {bundle_id} from disk: {e}")
+            return None
 
     # Backward compatibility properties
     @property

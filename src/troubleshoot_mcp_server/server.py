@@ -377,8 +377,8 @@ async def kubectl(
     formatter = get_formatter(verbosity)
 
     try:
-        # Get the specific bundle by ID
-        bundle = bundle_manager.bundles.get(bundle_id)
+        # Get the specific bundle by ID (lazy-load from disk if needed)
+        bundle = bundle_manager._load_bundle_from_disk_if_needed(bundle_id)
         if bundle is None or not bundle.initialized:
             error_message = (
                 f"Bundle '{bundle_id}' not found or not initialized. "
@@ -513,8 +513,8 @@ async def list_files(
     formatter = get_formatter(verbosity)
 
     try:
-        # Get the specific bundle by ID
-        bundle = bundle_manager.bundles.get(bundle_id)
+        # Get the specific bundle by ID (lazy-load from disk if needed)
+        bundle = bundle_manager._load_bundle_from_disk_if_needed(bundle_id)
         if bundle is None:
             error_message = f"Bundle '{bundle_id}' not found. Use initialize_bundle first."
             logger.error(f"Bundle {bundle_id} not found for list_files")
@@ -583,8 +583,8 @@ async def read_file(
     formatter = get_formatter(verbosity)
 
     try:
-        # Get the specific bundle by ID
-        bundle = bundle_manager.bundles.get(bundle_id)
+        # Get the specific bundle by ID (lazy-load from disk if needed)
+        bundle = bundle_manager._load_bundle_from_disk_if_needed(bundle_id)
         if bundle is None:
             error_message = f"Bundle '{bundle_id}' not found. Use initialize_bundle first."
             logger.error(f"Bundle {bundle_id} not found for read_file")
@@ -668,8 +668,8 @@ async def grep_files(
     formatter = get_formatter(verbosity)
 
     try:
-        # Get the specific bundle by ID
-        bundle = bundle_manager.bundles.get(bundle_id)
+        # Get the specific bundle by ID (lazy-load from disk if needed)
+        bundle = bundle_manager._load_bundle_from_disk_if_needed(bundle_id)
         if bundle is None:
             error_message = f"Bundle '{bundle_id}' not found. Use initialize_bundle first."
             logger.error(f"Bundle {bundle_id} not found for grep_files")
