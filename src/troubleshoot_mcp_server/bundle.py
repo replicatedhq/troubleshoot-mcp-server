@@ -280,7 +280,10 @@ class BundleManager:
         # Check memory first
         if bundle_id in self.bundles:
             # Check if sbctl process is still running for this bundle
-            if bundle_id not in self.sbctl_processes or self.sbctl_processes[bundle_id].returncode is not None:
+            if (
+                bundle_id not in self.sbctl_processes
+                or self.sbctl_processes[bundle_id].returncode is not None
+            ):
                 # sbctl died - need to restart it
                 logger.info(f"Bundle {bundle_id} loaded but sbctl not running - restarting")
                 await self._restart_sbctl_for_bundle(bundle_id)
@@ -683,11 +686,12 @@ class BundleManager:
 
                     # Extract the bundle if it's a tarfile - ensure support bundle extraction succeeds
                     # Support bundles often have complex structures, so we need to handle them properly
-                    if str(bundle_path).endswith((".tar.gz", ".tgz")):
+                    tarball_path = bundle_output_dir / "bundle.tar.gz"
+                    if tarball_path.exists() and str(tarball_path).endswith((".tar.gz", ".tgz")):
                         import tarfile
 
                         logger.info(f"Extracting bundle to: {extract_dir}")
-                        with tarfile.open(bundle_path, "r:gz") as tar:
+                        with tarfile.open(tarball_path, "r:gz") as tar:
                             # First list the files to get a count
                             members = tar.getmembers()
                             logger.info(f"Support bundle contains {len(members)} entries")
@@ -2151,7 +2155,9 @@ class BundleManager:
                     # Only clean up temporary bundles
                     is_persistent_storage = os.getenv("MCP_BUNDLE_STORAGE") is not None
                     if is_persistent_storage:
-                        logger.info(f"Keeping bundle in persistent storage: {self.active_bundle.id}")
+                        logger.info(
+                            f"Keeping bundle in persistent storage: {self.active_bundle.id}"
+                        )
                         # Terminate sbctl but don't delete bundle files
                         self.active_bundle = None
                         return
