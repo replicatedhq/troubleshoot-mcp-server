@@ -280,8 +280,10 @@ class BundleManager:
         if metadata:
             self.bundles[metadata.id] = metadata
             self.active_bundle_id = metadata.id
+            logger.info(f"SET active_bundle: bundle_id={metadata.id}, total_bundles={len(self.bundles)}")
         else:
             self.active_bundle_id = None
+            logger.info("CLEAR active_bundle")
 
     @property
     def sbctl_process(self) -> Optional[asyncio.subprocess.Process]:
