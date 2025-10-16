@@ -1378,8 +1378,9 @@ class BundleManager:
 
             logger.exception(f"Error initializing bundle with sbctl: {error_message}")
 
-            # Terminate the process
-            await self._terminate_sbctl_process()
+            # Terminate the process for THIS bundle (use active_bundle_id which was set earlier)
+            if self.active_bundle_id:
+                await self._terminate_sbctl_process(self.active_bundle_id)
 
             raise BundleInitializationError(
                 f"Failed to initialize bundle with sbctl: {error_message}"
@@ -1828,8 +1829,9 @@ class BundleManager:
 
             logger.warning(f"Restarting sbctl after crash (exit code: {exit_code})")
 
-            # Clean up current process
-            await self._terminate_sbctl_process()
+            # Clean up current process (use active_bundle_id if available)
+            if self.active_bundle_id:
+                await self._terminate_sbctl_process(self.active_bundle_id)
 
             # Clear stderr buffer for fresh start
             self._stderr_buffer.clear()
@@ -2152,8 +2154,9 @@ class BundleManager:
         if self.active_bundle:
             logger.info(f"Cleaning up active bundle: {self.active_bundle.id}")
 
-            # 1. Stop the sbctl process if it's running
-            await self._terminate_sbctl_process()
+            # 1. Stop the sbctl process for THIS bundle
+            if self.active_bundle:
+                await self._terminate_sbctl_process(self.active_bundle.id)
 
             # 2. Remove extracted bundle directories (ONLY if using temp storage)
             try:
