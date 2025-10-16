@@ -655,9 +655,9 @@ class BundleManager:
                 # Local file - use as-is
                 bundle_path_for_init = bundle_path
 
-            # Initialize the bundle with sbctl
+            # Initialize the bundle with sbctl (pass bundle_id to prevent race condition)
             kubeconfig_path = await self._initialize_with_sbctl(
-                bundle_path_for_init, bundle_output_dir
+                bundle_path_for_init, bundle_output_dir, bundle_id
             )
 
             # Handle case where no kubeconfig was created (host-only bundle)
@@ -1191,13 +1191,14 @@ class BundleManager:
                 raise
             raise BundleDownloadError(f"Failed to download bundle from {original_url}: {str(e)}")
 
-    async def _initialize_with_sbctl(self, bundle_path: Path, output_dir: Path) -> Path:
+    async def _initialize_with_sbctl(self, bundle_path: Path, output_dir: Path, bundle_id: str) -> Path:
         """
         Initialize a support bundle with sbctl.
 
         Args:
             bundle_path: The path to the bundle file
             output_dir: The directory where the bundle will be extracted
+            bundle_id: The bundle ID (used for cleanup on error, prevents race conditions)
 
         Returns:
             The path to the kubeconfig file
@@ -1378,9 +1379,9 @@ class BundleManager:
 
             logger.exception(f"Error initializing bundle with sbctl: {error_message}")
 
-            # Terminate the process for THIS bundle (use active_bundle_id which was set earlier)
-            if self.active_bundle_id:
-                await self._terminate_sbctl_process(self.active_bundle_id)
+            # Terminate the process for THIS bundle (use local bundle_id parameter to prevent race condition)
+            # IMPORTANT: Don't use self.active_bundle_id here - it can be changed by concurrent workflows!
+            await self._terminate_sbctl_process(bundle_id)
 
             raise BundleInitializationError(
                 f"Failed to initialize bundle with sbctl: {error_message}"
@@ -1812,6 +1813,11 @@ class BundleManager:
             return False
 
         try:
+            # IMPORTANT: Capture bundle info at start to prevent race condition
+            # Don't read self.active_bundle_id later - it can change with concurrent workflows!
+            bundle_to_restart = self.active_bundle
+            bundle_id_to_restart = bundle_to_restart.id
+
             # Capture crash information
             exit_code = None
             if self.sbctl_process:
@@ -1829,31 +1835,29 @@ class BundleManager:
 
             logger.warning(f"Restarting sbctl after crash (exit code: {exit_code})")
 
-            # Clean up current process (use active_bundle_id if available)
-            if self.active_bundle_id:
-                await self._terminate_sbctl_process(self.active_bundle_id)
+            # Clean up current process (use captured bundle_id to prevent race condition)
+            await self._terminate_sbctl_process(bundle_id_to_restart)
 
             # Clear stderr buffer for fresh start
             self._stderr_buffer.clear()
 
             # Delete stale kubeconfig before restart
             # This ensures sbctl creates a fresh kubeconfig with the new port
-            if self.active_bundle and self.active_bundle.kubeconfig_path.exists():
+            if bundle_to_restart.kubeconfig_path.exists():
                 try:
                     logger.warning(
-                        f"Deleting stale kubeconfig before sbctl restart: {self.active_bundle.kubeconfig_path}"
+                        f"Deleting stale kubeconfig before sbctl restart: {bundle_to_restart.kubeconfig_path}"
                     )
-                    self.active_bundle.kubeconfig_path.unlink()
+                    bundle_to_restart.kubeconfig_path.unlink()
                 except Exception as e:
                     logger.warning(f"Failed to delete stale kubeconfig (continuing anyway): {e}")
             else:
                 logger.warning(
-                    f"Skipping kubeconfig deletion (active_bundle={self.active_bundle is not None}, "
-                    f"exists={self.active_bundle.kubeconfig_path.exists() if self.active_bundle else 'N/A'})"
+                    f"Skipping kubeconfig deletion (exists={bundle_to_restart.kubeconfig_path.exists()})"
                 )
 
-            # Restart sbctl with the same bundle
-            bundle_path = self.active_bundle.path
+            # Restart sbctl with the same bundle (use captured bundle to prevent race condition)
+            bundle_path = bundle_to_restart.path
             await self._start_sbctl_process(bundle_path)
 
             # Start stderr monitoring after successful restart
