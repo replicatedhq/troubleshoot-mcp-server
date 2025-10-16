@@ -308,12 +308,11 @@ class BundleManager:
                     initialized=True,
                     host_only_bundle=False,
                 )
-                # Cache in memory
+                # Cache in memory (DON'T set active_bundle_id - causes concurrent conflicts)
                 self.bundles[bundle_id] = metadata
-                self.active_bundle_id = bundle_id
                 logger.info(f"Lazy-loaded bundle from disk: {bundle_id}")
 
-                # Restart sbctl for this bundle
+                # Restart sbctl for this bundle (pass bundle_id explicitly)
                 if bundle_tarball.exists():
                     await self._restart_sbctl_for_bundle(bundle_id)
 
@@ -335,17 +334,24 @@ class BundleManager:
             logger.warning(f"Cannot restart sbctl: bundle {bundle_id} not in bundles dict")
             return
 
+        # Check if sbctl already running for this bundle
+        if bundle_id in self.sbctl_processes:
+            process = self.sbctl_processes[bundle_id]
+            if process.returncode is None:  # Still running
+                logger.info(f"sbctl already running for bundle {bundle_id}")
+                return
+
         bundle_tarball = bundle.path / "bundle.tar.gz"
         if not bundle_tarball.exists():
             logger.warning(f"Cannot restart sbctl: bundle tarball not found for {bundle_id}")
             return
 
         try:
-            # Set as active so sbctl_process property works
+            # Temporarily set as active so property setter works (avoid concurrent conflicts with lock)
             old_active = self.active_bundle_id
             self.active_bundle_id = bundle_id
 
-            # Start sbctl
+            # Start sbctl (will be stored in sbctl_processes[bundle_id] via property setter)
             await self._start_sbctl_process(bundle_tarball, bundle.path)
             logger.info(f"Restarted sbctl for bundle {bundle_id}")
 
@@ -353,6 +359,7 @@ class BundleManager:
             self.active_bundle_id = old_active
         except Exception as e:
             logger.error(f"Failed to restart sbctl for bundle {bundle_id}: {e}")
+            self.active_bundle_id = old_active
 
     # Backward compatibility properties
     @property
