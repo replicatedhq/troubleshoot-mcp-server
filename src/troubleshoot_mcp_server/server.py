@@ -181,34 +181,64 @@ def check_response_size(
         return [TextContent(type="text", text=overflow_msg)]
 
 
+def get_session_id() -> Optional[str]:
+    """
+    Extract the MCP session_id from the current request context.
+
+    The session_id is passed by the MCP client (PydanticAI) as a query parameter
+    in the SSE transport URL (e.g., /messages/?session_id=abc123).
+
+    Returns:
+        Session ID string if available, None otherwise
+    """
+    try:
+        ctx = mcp.get_context()
+        if ctx and ctx.request_context and ctx.request_context.request:
+            # For SSE transport, request is a Starlette Request with query_params
+            session_id = ctx.request_context.request.query_params.get("session_id")
+            return session_id
+    except Exception as e:
+        logger.debug(f"Could not extract session_id from context: {e}")
+
+    return None
+
+
 @mcp.tool()
 async def initialize_bundle(
     source: str, force: bool = False, verbosity: Optional[str] = None
 ) -> List[TextContent]:
     """
-    Initialize a Kubernetes support bundle for analysis. This tool loads a bundle
-    and makes it available for exploration with other tools.
+    Initialize a Kubernetes support bundle for analysis.
 
-    BUNDLE PERSISTENCE: Once initialized, a bundle remains active for all subsequent
-    tool calls (kubectl, list_files, read_file, grep_files) until a different bundle
-    is initialized. You don't need to re-initialize the same bundle repeatedly.
+    This tool loads a bundle and makes it automatically available for all subsequent
+    tool calls in your session (kubectl, list_files, read_file, grep_files).
+    You don't need to track or pass any bundle identifier - just call this once,
+    and all other tools will use this bundle automatically.
 
     Use `force=true` to switch to a different bundle or to reload the current bundle.
-    Previously downloaded bundles can be quickly re-initialized by providing their path.
 
     Args:
         source: (string, required) The source of the bundle (URL or local file path)
         force: (boolean, optional) Whether to force re-initialization if a bundle
-            is already active. Defaults to False.
+            is already active for your session. Defaults to False.
         verbosity: (string, optional) Verbosity level for response formatting
             (minimal|standard|verbose|debug). Defaults to minimal.
 
     Returns:
-        Metadata about the initialized bundle including path and kubeconfig location.
-        If the API server is not available, also returns diagnostic information.
+        Status indicating the bundle is ready. All subsequent tool calls will
+        automatically use this bundle. If the API server is not available,
+        returns diagnostic information.
     """
     bundle_manager = get_bundle_manager()
     formatter = get_formatter(verbosity)
+
+    # Get session ID for this tool call
+    session_id = get_session_id()
+    if not session_id:
+        error_message = "Could not determine session ID. This tool requires MCP session context."
+        logger.error(error_message)
+        formatted_error = formatter.format_error(error_message)
+        return [TextContent(type="text", text=formatted_error)]
 
     try:
         # Check if sbctl is available before attempting to initialize
@@ -221,6 +251,10 @@ async def initialize_bundle(
 
         # Initialize the bundle
         result = await bundle_manager.initialize_bundle(source, force)
+
+        # Associate bundle with this session
+        bundle_manager.set_bundle_for_session(session_id, result.id)
+        logger.info(f"Bundle {result.id} associated with session {session_id[:8]}...")
 
         # Check if the API server is available
         api_server_available = await bundle_manager.check_api_server_available()
@@ -334,24 +368,16 @@ else:
 
 @mcp.tool()
 async def kubectl(
-    bundle_id: str,
     command: str,
     timeout: int = 5,
     json_output: bool = False,
     verbosity: Optional[str] = None,
 ) -> List[TextContent]:
     """
-    Execute kubectl commands against a bundle's Kubernetes API server.
+    Execute kubectl commands against your active bundle's Kubernetes API server.
 
-    BUNDLE ID REQUIREMENT: You must provide the bundle_id you received from initialize_bundle.
-    Each bundle has a unique ID returned when you call initialize_bundle. Use that ID with
-    this tool to run kubectl commands against that specific bundle.
-
-    Example workflow:
-      1. Call initialize_bundle(source="https://example.com/bundle.tar.gz")
-         → Returns: {"bundle_id": "bundle_abc123", "status": "ready"}
-      2. Call kubectl(bundle_id="bundle_abc123", command="get pods")
-         → Runs kubectl against bundle_abc123
+    This tool automatically uses the bundle you initialized with initialize_bundle.
+    You don't need to specify which bundle - it uses your session's bundle automatically.
 
     IMPORTANT: Accepts kubectl arguments only, not shell commands. Shell operations
     like pipes (|), redirects (>), and command chaining (&&) are not supported.
@@ -359,7 +385,6 @@ async def kubectl(
     ✅ Valid: 'get pods -l app=nginx'
 
     Args:
-        bundle_id: (string, required) The bundle ID returned from initialize_bundle
         command: (string, required) The kubectl command to execute (e.g., "get pods",
             "get nodes -o wide", "describe deployment nginx")
         timeout: (integer, optional) Timeout in seconds for the command. Defaults to 5.
@@ -375,6 +400,24 @@ async def kubectl(
     """
     bundle_manager = get_bundle_manager()
     formatter = get_formatter(verbosity)
+
+    # Get session ID and look up bundle
+    session_id = get_session_id()
+    if not session_id:
+        error_message = "Could not determine session ID. This tool requires MCP session context."
+        logger.error(error_message)
+        formatted_error = formatter.format_error(error_message)
+        return [TextContent(type="text", text=formatted_error)]
+
+    bundle_id = bundle_manager.get_bundle_for_session(session_id)
+    if not bundle_id:
+        error_message = (
+            "No bundle initialized for your session. "
+            "Please call initialize_bundle first to load a support bundle."
+        )
+        logger.error(f"No bundle found for session {session_id[:8]}...")
+        formatted_error = formatter.format_error(error_message)
+        return [TextContent(type="text", text=formatted_error)]
 
     try:
         # Get the specific bundle by ID (lazy-load from disk if needed)
@@ -482,21 +525,15 @@ async def kubectl(
 
 @mcp.tool()
 async def list_files(
-    bundle_id: str, path: str, recursive: bool = False, verbosity: Optional[str] = None
+    path: str, recursive: bool = False, verbosity: Optional[str] = None
 ) -> List[TextContent]:
     """
-    List files and directories within a support bundle.
+    List files and directories within your active bundle.
 
-    BUNDLE ID REQUIREMENT: You must provide the bundle_id you received from initialize_bundle.
-
-    Example workflow:
-      1. Call initialize_bundle(source="https://example.com/bundle.tar.gz")
-         → Returns: {"bundle_id": "bundle_abc123", "status": "ready"}
-      2. Call list_files(bundle_id="bundle_abc123", path="/")
-         → Lists root directory of bundle_abc123
+    This tool automatically uses the bundle you initialized with initialize_bundle.
+    You don't need to specify which bundle - it uses your session's bundle automatically.
 
     Args:
-        bundle_id: (string, required) The bundle ID returned from initialize_bundle
         path: (string, required) The path within the bundle to list. Use "" or "/"
             for root directory. Path cannot contain directory traversal (e.g., "../").
         recursive: (boolean, optional) Whether to list files and directories recursively.
@@ -511,6 +548,24 @@ async def list_files(
     """
     bundle_manager = get_bundle_manager()
     formatter = get_formatter(verbosity)
+
+    # Get session ID and look up bundle
+    session_id = get_session_id()
+    if not session_id:
+        error_message = "Could not determine session ID. This tool requires MCP session context."
+        logger.error(error_message)
+        formatted_error = formatter.format_error(error_message)
+        return [TextContent(type="text", text=formatted_error)]
+
+    bundle_id = bundle_manager.get_bundle_for_session(session_id)
+    if not bundle_id:
+        error_message = (
+            "No bundle initialized for your session. "
+            "Please call initialize_bundle first to load a support bundle."
+        )
+        logger.error(f"No bundle found for session {session_id[:8]}...")
+        formatted_error = formatter.format_error(error_message)
+        return [TextContent(type="text", text=formatted_error)]
 
     try:
         # Get the specific bundle by ID (lazy-load from disk if needed)
@@ -547,25 +602,18 @@ async def list_files(
 
 @mcp.tool()
 async def read_file(
-    bundle_id: str,
     path: str,
     start_line: int = 0,
     end_line: Optional[int] = None,
     verbosity: Optional[str] = None,
 ) -> List[TextContent]:
     """
-    Read a file within a support bundle with optional line range filtering.
+    Read a file within your active bundle with optional line range filtering.
 
-    BUNDLE ID REQUIREMENT: You must provide the bundle_id you received from initialize_bundle.
-
-    Example workflow:
-      1. Call initialize_bundle(source="https://example.com/bundle.tar.gz")
-         → Returns: {"bundle_id": "bundle_abc123", "status": "ready"}
-      2. Call read_file(bundle_id="bundle_abc123", path="logs/app.log")
-         → Reads logs/app.log from bundle_abc123
+    This tool automatically uses the bundle you initialized with initialize_bundle.
+    You don't need to specify which bundle - it uses your session's bundle automatically.
 
     Args:
-        bundle_id: (string, required) The bundle ID returned from initialize_bundle
         path: (string, required) The path to the file within the bundle to read.
             Path cannot contain directory traversal (e.g., "../").
         start_line: (integer, optional) The line number to start reading from (0-indexed).
@@ -581,6 +629,24 @@ async def read_file(
     """
     bundle_manager = get_bundle_manager()
     formatter = get_formatter(verbosity)
+
+    # Get session ID and look up bundle
+    session_id = get_session_id()
+    if not session_id:
+        error_message = "Could not determine session ID. This tool requires MCP session context."
+        logger.error(error_message)
+        formatted_error = formatter.format_error(error_message)
+        return [TextContent(type="text", text=formatted_error)]
+
+    bundle_id = bundle_manager.get_bundle_for_session(session_id)
+    if not bundle_id:
+        error_message = (
+            "No bundle initialized for your session. "
+            "Please call initialize_bundle first to load a support bundle."
+        )
+        logger.error(f"No bundle found for session {session_id[:8]}...")
+        formatted_error = formatter.format_error(error_message)
+        return [TextContent(type="text", text=formatted_error)]
 
     try:
         # Get the specific bundle by ID (lazy-load from disk if needed)
@@ -617,7 +683,6 @@ async def read_file(
 
 @mcp.tool()
 async def grep_files(
-    bundle_id: str,
     pattern: str,
     path: str,
     recursive: bool = True,
@@ -629,18 +694,12 @@ async def grep_files(
     verbosity: Optional[str] = None,
 ) -> List[TextContent]:
     """
-    Search for patterns in files within a support bundle.
+    Search for patterns in files within your active bundle.
 
-    BUNDLE ID REQUIREMENT: You must provide the bundle_id you received from initialize_bundle.
-
-    Example workflow:
-      1. Call initialize_bundle(source="https://example.com/bundle.tar.gz")
-         → Returns: {"bundle_id": "bundle_abc123", "status": "ready"}
-      2. Call grep_files(bundle_id="bundle_abc123", pattern="error", path="/logs")
-         → Searches for "error" in bundle_abc123's logs directory
+    This tool automatically uses the bundle you initialized with initialize_bundle.
+    You don't need to specify which bundle - it uses your session's bundle automatically.
 
     Args:
-        bundle_id: (string, required) The bundle ID returned from initialize_bundle
         pattern: (string, required) The pattern to search for. Supports regex syntax.
         path: (string, required) The path within the bundle to search. Use "" or "/"
             to search from root. Path cannot contain directory traversal (e.g., "../").
@@ -666,6 +725,24 @@ async def grep_files(
     """
     bundle_manager = get_bundle_manager()
     formatter = get_formatter(verbosity)
+
+    # Get session ID and look up bundle
+    session_id = get_session_id()
+    if not session_id:
+        error_message = "Could not determine session ID. This tool requires MCP session context."
+        logger.error(error_message)
+        formatted_error = formatter.format_error(error_message)
+        return [TextContent(type="text", text=formatted_error)]
+
+    bundle_id = bundle_manager.get_bundle_for_session(session_id)
+    if not bundle_id:
+        error_message = (
+            "No bundle initialized for your session. "
+            "Please call initialize_bundle first to load a support bundle."
+        )
+        logger.error(f"No bundle found for session {session_id[:8]}...")
+        formatted_error = formatter.format_error(error_message)
+        return [TextContent(type="text", text=formatted_error)]
 
     try:
         # Get the specific bundle by ID (lazy-load from disk if needed)

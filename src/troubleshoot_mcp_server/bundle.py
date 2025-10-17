@@ -252,6 +252,9 @@ class BundleManager:
         self.sbctl_processes: dict[str, asyncio.subprocess.Process] = {}
         self.active_bundle_id: Optional[str] = None
 
+        # Session-based bundle tracking (MCP session -> bundle mapping)
+        self.session_bundles: dict[str, str] = {}  # session_id -> bundle_id
+
         self._host_only_bundle: bool = False
         self._termination_requested: bool = False
 
@@ -553,6 +556,47 @@ class BundleManager:
             "initialize_bundle tool. Provide a bundle URL or path to the "
             "initialize_bundle tool."
         )
+
+    # Session management methods for MCP session-based bundle tracking
+    def set_bundle_for_session(self, session_id: str, bundle_id: str) -> None:
+        """
+        Associate a bundle with an MCP session.
+
+        Args:
+            session_id: MCP session identifier
+            bundle_id: Bundle identifier to associate with this session
+        """
+        logger.info(f"Session {session_id[:8]}... -> bundle {bundle_id}")
+        self.session_bundles[session_id] = bundle_id
+
+    def get_bundle_for_session(self, session_id: str) -> Optional[str]:
+        """
+        Get the bundle ID associated with an MCP session.
+
+        Args:
+            session_id: MCP session identifier
+
+        Returns:
+            Bundle ID if found, None otherwise
+        """
+        return self.session_bundles.get(session_id)
+
+    async def cleanup_session(self, session_id: str) -> None:
+        """
+        Cleanup resources for an MCP session and its associated bundle.
+
+        Args:
+            session_id: MCP session identifier
+        """
+        bundle_id = self.session_bundles.pop(session_id, None)
+        if bundle_id:
+            logger.info(f"Cleaning up session {session_id[:8]}... (bundle: {bundle_id})")
+            try:
+                await self.cleanup_bundle(bundle_id)
+            except Exception as e:
+                logger.error(f"Error cleaning up bundle {bundle_id} for session {session_id}: {e}")
+        else:
+            logger.debug(f"No bundle associated with session {session_id[:8]}...")
 
     async def initialize_bundle(
         self, source: str, force: bool = False, token: Optional[str] = None
@@ -1191,7 +1235,9 @@ class BundleManager:
                 raise
             raise BundleDownloadError(f"Failed to download bundle from {original_url}: {str(e)}")
 
-    async def _initialize_with_sbctl(self, bundle_path: Path, output_dir: Path, bundle_id: str) -> Path:
+    async def _initialize_with_sbctl(
+        self, bundle_path: Path, output_dir: Path, bundle_id: str
+    ) -> Path:
         """
         Initialize a support bundle with sbctl.
 
