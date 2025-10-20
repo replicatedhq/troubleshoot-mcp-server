@@ -185,8 +185,9 @@ def get_session_id() -> Optional[str]:
     """
     Extract the MCP session_id from the current request context.
 
-    The session_id is passed by the MCP client (PydanticAI) as a query parameter
-    in the SSE transport URL (e.g., /messages/?session_id=abc123).
+    Prefer explicit query param (?session_id=...), but accept an
+    `x-mcp-session-id` header as a tolerant fallback. This lets clients
+    avoid URL rewriting when their SSE library supports headers.
 
     Returns:
         Session ID string if available, None otherwise
@@ -194,9 +195,11 @@ def get_session_id() -> Optional[str]:
     try:
         ctx = mcp.get_context()
         if ctx and ctx.request_context and ctx.request_context.request:
-            # For SSE transport, request is a Starlette Request with query_params
-            session_id = ctx.request_context.request.query_params.get("session_id")
-            return session_id
+            req = ctx.request_context.request
+            return (
+                req.query_params.get("session_id")
+                or req.headers.get("x-mcp-session-id")
+            )
     except Exception as e:
         logger.debug(f"Could not extract session_id from context: {e}")
 
