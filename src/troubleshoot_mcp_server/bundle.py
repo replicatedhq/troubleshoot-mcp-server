@@ -573,13 +573,31 @@ class BundleManager:
         """
         Get the bundle ID associated with an MCP session.
 
+        Falls back to checking if session_id exists as bundle_id on disk,
+        enabling stateless operation across BundleManager instances.
+
         Args:
             session_id: MCP session identifier
 
         Returns:
             Bundle ID if found, None otherwise
         """
-        return self.session_bundles.get(session_id)
+        # Check in-memory mapping first
+        bundle_id = self.session_bundles.get(session_id)
+        if bundle_id:
+            return bundle_id
+
+        # Fallback: check if session_id itself is a bundle directory on disk
+        # This allows stateless operation - if bundle was initialized with
+        # session_id as bundle_id, we can find it without in-memory state
+        bundle_path = self.bundle_dir / session_id
+        if bundle_path.exists() and bundle_path.is_dir():
+            logger.info(f"Found bundle on disk for session {session_id[:16]}... (stateless lookup)")
+            # Cache it for this instance
+            self.session_bundles[session_id] = session_id
+            return session_id
+
+        return None
 
     async def cleanup_session(self, session_id: str) -> None:
         """
@@ -599,7 +617,7 @@ class BundleManager:
             logger.debug(f"No bundle associated with session {session_id[:8]}...")
 
     async def initialize_bundle(
-        self, source: str, force: bool = False, token: Optional[str] = None
+        self, source: str, force: bool = False, token: Optional[str] = None, bundle_id: Optional[str] = None
     ) -> BundleMetadata:
         """
         Initialize a support bundle from a source.
@@ -608,6 +626,7 @@ class BundleManager:
             source: The source of the bundle (URL or local path)
             force: Whether to force re-initialization if a bundle is already active
             token: Optional SBCTL token for authenticated downloads (overrides SBCTL_TOKEN env var)
+            bundle_id: Optional explicit bundle ID (if None, generates from source hash)
 
         Returns:
             Metadata for the initialized bundle
@@ -675,8 +694,9 @@ class BundleManager:
                         f"Bundle not found: {source} (tried both as absolute path and in bundle directory {self.bundle_dir})"
                     )
 
-            # Generate a unique ID for the bundle
-            bundle_id = self._generate_bundle_id(source)
+            # Generate a unique ID for the bundle (or use provided one for session-based naming)
+            if not bundle_id:
+                bundle_id = self._generate_bundle_id(source)
 
             # Set as active bundle BEFORE initialization so sbctl_process property works correctly
             self.active_bundle_id = bundle_id

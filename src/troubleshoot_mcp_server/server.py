@@ -196,10 +196,15 @@ def get_session_id() -> Optional[str]:
         ctx = mcp.get_context()
         if ctx and ctx.request_context and ctx.request_context.request:
             req = ctx.request_context.request
-            return (
-                req.query_params.get("session_id")
-                or req.headers.get("x-mcp-session-id")
-            )
+            from_query = req.query_params.get("session_id")
+            from_header = req.headers.get("x-mcp-session-id")
+
+            # Debug: log what we found
+            if from_query or from_header:
+                logger.info(f"Session ID - query: {from_query[:8] if from_query else 'None'}..., header: {from_header[:8] if from_header else 'None'}...")
+
+            # Prefer header (stable workflow_id) over query param (random from SSE client)
+            return from_header or from_query
     except Exception as e:
         logger.debug(f"Could not extract session_id from context: {e}")
 
@@ -252,12 +257,12 @@ async def initialize_bundle(
             formatted_error = formatter.format_error(error_message)
             return [TextContent(type="text", text=formatted_error)]
 
-        # Initialize the bundle
-        result = await bundle_manager.initialize_bundle(source, force)
+        # Initialize the bundle using session_id as bundle_id for stateless operation
+        result = await bundle_manager.initialize_bundle(source, force, bundle_id=session_id)
 
-        # Associate bundle with this session
+        # Associate bundle with this session (now bundle_id == session_id)
         bundle_manager.set_bundle_for_session(session_id, result.id)
-        logger.info(f"Bundle {result.id} associated with session {session_id[:8]}...")
+        logger.info(f"Bundle {result.id} associated with session {session_id[:16]}... (session_id == bundle_id)")
 
         # Check if the API server is available
         api_server_available = await bundle_manager.check_api_server_available()

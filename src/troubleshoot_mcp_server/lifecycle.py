@@ -162,18 +162,22 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
                 except (asyncio.CancelledError, asyncio.TimeoutError):
                     logger.warning(f"Task {name} did not complete gracefully within timeout")
 
-        # Clean up all session bundles first
+        # Clean up all session bundles first (unless preserving for Temporal workflows)
+        preserve_bundles = os.environ.get("PRESERVE_BUNDLES", "false").lower() == "true"
         try:
             session_count = len(bundle_manager.session_bundles)
             if session_count > 0:
-                logger.info(f"Cleaning up {session_count} session bundles")
-                # Copy session IDs to avoid mutation during iteration
-                session_ids = list(bundle_manager.session_bundles.keys())
-                for session_id in session_ids:
-                    try:
-                        await bundle_manager.cleanup_session(session_id)
-                    except Exception as e:
-                        logger.error(f"Error cleaning up session {session_id[:8]}...: {e}")
+                if preserve_bundles:
+                    logger.info(f"PRESERVE_BUNDLES enabled, keeping {session_count} session mappings for reuse")
+                else:
+                    logger.info(f"Cleaning up {session_count} session bundles")
+                    # Copy session IDs to avoid mutation during iteration
+                    session_ids = list(bundle_manager.session_bundles.keys())
+                    for session_id in session_ids:
+                        try:
+                            await bundle_manager.cleanup_session(session_id)
+                        except Exception as e:
+                            logger.error(f"Error cleaning up session {session_id[:8]}...: {e}")
         except Exception as e:
             logger.error(f"Error during session bundle cleanup: {e}")
 
