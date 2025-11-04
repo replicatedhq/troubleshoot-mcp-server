@@ -86,8 +86,8 @@ def parse_args(args: Optional[List[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--transport",
         type=str,
-        choices=["stdio", "sse", "http"],
-        help="Transport protocol (stdio for local/subprocess, sse for hosted SSE server, http for REST API)",
+        choices=["stdio", "sse", "streamable-http", "http"],
+        help="Transport protocol (stdio for local/subprocess, sse/streamable-http for MCP server, http for REST API)",
     )
     parser.add_argument(
         "--host",
@@ -176,7 +176,7 @@ def main(args: Optional[List[str]] = None) -> None:
 
     # CRITICAL: Import server AFTER configuring environment variables
     # FastMCP Settings are read when the module is imported
-    from .server import mcp, shutdown as server_shutdown
+    from .server import mcp, shutdown as server_shutdown, initialize_with_bundle_dir
 
     # Register shutdown function with atexit to ensure cleanup on normal exit
     logger.debug("Registering atexit shutdown handler")
@@ -198,10 +198,11 @@ def main(args: Optional[List[str]] = None) -> None:
                      parsed_args.port,
                      bundle_dir or Path("/tmp/bundles"))
 
-        elif transport_mode == "sse":
-            # SSE MCP protocol mode
-            logger.debug("Starting FastMCP server with SSE transport")
-            mcp.run(transport="sse")
+        elif transport_mode in ["sse", "streamable-http"]:
+            # SSE or Streamable HTTP MCP protocol mode
+            logger.debug(f"Starting FastMCP server with {transport_mode} transport")
+            initialize_with_bundle_dir(bundle_dir)
+            mcp.run(transport=transport_mode)
 
         else:
             # stdio MCP protocol mode
