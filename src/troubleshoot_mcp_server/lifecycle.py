@@ -99,8 +99,19 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
     )
     cleanup_interval = int(os.environ.get("CLEANUP_INTERVAL", "3600"))
 
-    # Initialize bundle manager
-    bundle_manager = BundleManager(bundle_dir)
+    # Check if we already have a global BundleManager (for Streamable HTTP persistence)
+    # This allows Streamable HTTP to reuse the same BundleManager across all sessions
+    from .server import get_bundle_manager as get_existing_manager
+    try:
+        existing_manager = get_existing_manager(bundle_dir)
+        if existing_manager is not None:
+            logger.info("Reusing existing global BundleManager (Streamable HTTP mode)")
+            bundle_manager = existing_manager
+        else:
+            bundle_manager = BundleManager(bundle_dir)
+    except Exception:
+        # Create new if getting existing fails
+        bundle_manager = BundleManager(bundle_dir)
 
     # Auto-activate bundle if single bundle mode is enabled
     await bundle_manager._auto_activate_bundle_if_exists()
