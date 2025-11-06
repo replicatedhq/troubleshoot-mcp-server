@@ -185,9 +185,10 @@ def get_session_id() -> Optional[str]:
     """
     Extract the MCP session_id from the current request context.
 
-    Prefer explicit query param (?session_id=...), but accept an
-    `x-mcp-session-id` header as a tolerant fallback. This lets clients
-    avoid URL rewriting when their SSE library supports headers.
+    Priority order:
+    1. Query param: ?session_id=... (explicit from client)
+    2. x-mcp-session-id header (custom header, if MCP SDK preserves it)
+    3. mcp-session-id header (SDK's auto-generated session ID)
 
     Returns:
         Session ID string if available, None otherwise
@@ -196,17 +197,25 @@ def get_session_id() -> Optional[str]:
         ctx = mcp.get_context()
         if ctx and ctx.request_context and ctx.request_context.request:
             req = ctx.request_context.request
+
+            # Try all possible sources
             from_query = req.query_params.get("session_id")
-            from_header = req.headers.get("x-mcp-session-id")
+            from_custom_header = req.headers.get("x-mcp-session-id")
+            from_sdk_header = req.headers.get("mcp-session-id")
 
-            # Debug: log what we found
-            if from_query or from_header:
-                logger.info(f"Session ID - query: {from_query[:8] if from_query else 'None'}..., header: {from_header[:8] if from_header else 'None'}...")
+            # Debug logging
+            logger.debug(f"[Session] query={from_query}, x-mcp-session-id={from_custom_header}, mcp-session-id={from_sdk_header}")
 
-            # Prefer header (stable workflow_id) over query param (random from SSE client)
-            return from_header or from_query
+            # Prefer explicit query param, then custom header, then fall back to SDK session
+            session_id = from_query or from_custom_header or from_sdk_header
+
+            if session_id:
+                source = "query" if from_query else ("custom_header" if from_custom_header else "sdk_header")
+                logger.info(f"[Session] Using session_id from {source}: {session_id[:16]}...")
+
+            return session_id
     except Exception as e:
-        logger.debug(f"Could not extract session_id from context: {e}")
+        logger.error(f"Could not extract session_id from context: {e}", exc_info=True)
 
     return None
 
@@ -244,6 +253,18 @@ async def initialize_bundle(
     session_id = get_session_id()
     if not session_id:
         error_message = "Could not determine session ID. This tool requires MCP session context."
+        logger.error(error_message)
+        formatted_error = formatter.format_error(error_message)
+        return [TextContent(type="text", text=formatted_error)]
+
+    # Validate source is not a SHA-256 hash (common AI agent error)
+    import re
+    if re.match(r'^[a-f0-9]{64}$', source.strip().lower()):
+        error_message = (
+            f"Invalid bundle source: '{source}' appears to be a SHA-256 hash. "
+            "The source parameter must be a URL (e.g., https://...) or a local file path. "
+            "SHA-256 hashes are internal identifiers and cannot be used as bundle sources."
+        )
         logger.error(error_message)
         formatted_error = formatter.format_error(error_message)
         return [TextContent(type="text", text=formatted_error)]
