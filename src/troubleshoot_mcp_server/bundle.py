@@ -2784,11 +2784,21 @@ class BundleManager:
             self.active_bundle is not None and self.active_bundle.initialized
         )
 
+        # Try to check API availability (may fail if no bundle_id available in concurrent mode)
+        api_available = False
+        try:
+            # In concurrent mode, we can't check API without a specific bundle_id
+            # Just mark as unavailable in diagnostics
+            if self.active_bundle:
+                api_available = await self.check_api_server_available(bundle_id=self.active_bundle.id)
+        except Exception as e:
+            logger.debug(f"Could not check API availability for diagnostics: {e}")
+
         diagnostics = {
             "sbctl_available": await self._check_sbctl_available(),
             "sbctl_process_running": self.sbctl_process is not None
             and self.sbctl_process.returncode is None,
-            "api_server_available": await self.check_api_server_available(),
+            "api_server_available": api_available,
             "bundle_initialized": any_bundle_initialized,
             "system_info": await self._get_system_info(),
         }
