@@ -2700,20 +2700,18 @@ class BundleManager:
         This works across activity invocations in Temporal mode.
 
         Args:
-            bundle_id: Bundle ID to check (required in concurrent mode)
+            bundle_id: Bundle ID to check (required in concurrent mode, returns False if not provided)
 
         Returns:
             True if the API server is responding, False otherwise
-
-        Raises:
-            ValueError: If bundle_id is not provided
         """
         # Require bundle_id in concurrent mode
         if not bundle_id:
-            raise ValueError(
+            logger.error(
                 "bundle_id is required for API server availability check. "
                 "In concurrent mode, all bundle operations must specify the bundle_id explicitly."
             )
+            return False
 
         # Check if bundle exists
         if bundle_id not in self.bundle_states:
