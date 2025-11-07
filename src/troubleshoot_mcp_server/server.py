@@ -181,9 +181,50 @@ def check_response_size(
         return [TextContent(type="text", text=overflow_msg)]
 
 
+def get_bundle_scope_id() -> Optional[str]:
+    """
+    Extract the bundle scope ID from the current request context.
+
+    This is the stable, workflow-level identifier used for bundle persistence,
+    NOT the transport-level session_id which rotates per request.
+
+    Priority order:
+    1. X-Bundle-Scope header (workflow_run_id from client)
+    2. x-mcp-session-id header (fallback for older clients)
+    3. Query param ?session_id=... (legacy support)
+
+    Returns:
+        Bundle scope ID if found, None otherwise
+    """
+    try:
+        ctx = mcp.get_context()
+        if ctx and ctx.request_context and ctx.request_context.request:
+            req = ctx.request_context.request
+
+            # Try stable scope headers first
+            from_bundle_scope = req.headers.get("x-bundle-scope")
+            from_custom_header = req.headers.get("x-mcp-session-id")
+            from_query = req.query_params.get("session_id")
+
+            scope_id = from_bundle_scope or from_custom_header or from_query
+
+            if scope_id:
+                source = "x-bundle-scope" if from_bundle_scope else ("x-mcp-session-id" if from_custom_header else "query")
+                logger.info(f"[Bundle Scope] Using scope_id from {source}: {scope_id[:16]}...")
+                return scope_id
+
+    except Exception as e:
+        logger.debug(f"Could not extract bundle scope: {e}")
+
+    return None
+
+
 def get_session_id() -> str:
     """
     Extract the MCP session_id from the current request context.
+
+    This is the TRANSPORT correlation ID that rotates per request.
+    DO NOT use this for bundle persistence - use get_bundle_scope_id() instead.
 
     Priority order:
     1. Query param: ?session_id=... (explicit from client)
@@ -224,6 +265,35 @@ def get_session_id() -> str:
     return "default-session"
 
 
+def get_bundle_id_for_request() -> Optional[str]:
+    """
+    Get the bundle ID for the current request.
+
+    Uses X-Bundle-Scope header (workflow_run_id) for bundle lookups.
+    This is the ONLY supported mechanism for Temporal workflows.
+
+    Returns:
+        Bundle ID if found, None otherwise
+    """
+    bundle_manager = get_bundle_manager()
+
+    # Get bundle scope ID (workflow_run_id from X-Bundle-Scope header)
+    scope_id = get_bundle_scope_id()
+    if not scope_id:
+        logger.error("[Bundle Lookup] No X-Bundle-Scope header found - this is required for Temporal workflows")
+        return None
+
+    # Look up bundle for this workflow
+    bundle_id = bundle_manager.get_bundle_for_session(scope_id)
+
+    if bundle_id:
+        logger.debug(f"[Bundle Lookup] Found bundle for scope_id={scope_id[:16]}...")
+    else:
+        logger.debug(f"[Bundle Lookup] No bundle found for scope_id={scope_id[:16]}...")
+
+    return bundle_id
+
+
 @mcp.tool()
 async def initialize_bundle(
     source: str, force: bool = False, verbosity: Optional[str] = None
@@ -232,9 +302,9 @@ async def initialize_bundle(
     Initialize a Kubernetes support bundle for analysis.
 
     This tool loads a bundle and makes it automatically available for all subsequent
-    tool calls in your session (kubectl, list_files, read_file, grep_files).
+    tool calls in your workflow (kubectl, list_files, read_file, grep_files).
     You don't need to track or pass any bundle identifier - just call this once,
-    and all other tools will use this bundle automatically.
+    and all other tools will use this bundle automatically within your workflow.
 
     Use `force=true` to switch to a different bundle or to reload the current bundle.
 
@@ -253,8 +323,17 @@ async def initialize_bundle(
     bundle_manager = get_bundle_manager()
     formatter = get_formatter(verbosity)
 
-    # Get session ID for this tool call (always returns a valid ID)
-    session_id = get_session_id()
+    # Get stable bundle scope ID (workflow_run_id) for bundle persistence
+    bundle_scope_id = get_bundle_scope_id()
+    if not bundle_scope_id:
+        error_message = "No bundle scope ID found. Ensure X-Bundle-Scope header is set."
+        logger.error(error_message)
+        formatted_error = formatter.format_error(error_message)
+        return [TextContent(type="text", text=formatted_error)]
+
+    # Also get transport session_id for logging/tracking
+    transport_session_id = get_session_id()
+    logger.info(f"[init_bundle] transport_id={transport_session_id[:16]}..., scope_id={bundle_scope_id[:16]}...")
 
     # Validate source is not a SHA-256 hash (common AI agent error)
     import re
@@ -277,12 +356,13 @@ async def initialize_bundle(
             formatted_error = formatter.format_error(error_message)
             return [TextContent(type="text", text=formatted_error)]
 
-        # Initialize the bundle using session_id as bundle_id for stateless operation
-        result = await bundle_manager.initialize_bundle(source, force, bundle_id=session_id)
+        # Initialize the bundle using bundle_scope_id (workflow_run_id) as bundle_id
+        result = await bundle_manager.initialize_bundle(source, force, bundle_id=bundle_scope_id)
 
-        # Associate bundle with this session (now bundle_id == session_id)
-        bundle_manager.set_bundle_for_session(session_id, result.id)
-        logger.info(f"Bundle {result.id} associated with session {session_id[:16]}... (session_id == bundle_id)")
+        # Associate THIS transport session with the bundle (for subsequent tool calls)
+        bundle_manager.set_bundle_for_session(transport_session_id, result.id)
+        bundle_manager.set_bundle_for_session(bundle_scope_id, result.id)  # Also map scope_id directly
+        logger.info(f"Bundle {result.id} mapped to scope={bundle_scope_id[:16]}..., transport={transport_session_id[:16]}...")
 
         # Check if the API server is available (pass bundle_id for concurrent mode)
         api_server_available = await bundle_manager.check_api_server_available(bundle_id=result.id)
@@ -429,21 +509,14 @@ async def kubectl(
     bundle_manager = get_bundle_manager()
     formatter = get_formatter(verbosity)
 
-    # Get session ID and look up bundle
-    session_id = get_session_id()
-    if not session_id:
-        error_message = "Could not determine session ID. This tool requires MCP session context."
-        logger.error(error_message)
-        formatted_error = formatter.format_error(error_message)
-        return [TextContent(type="text", text=formatted_error)]
-
-    bundle_id = bundle_manager.get_bundle_for_session(session_id)
+    # Look up bundle using scope ID (workflow_run_id) or transport session ID
+    bundle_id = get_bundle_id_for_request()
     if not bundle_id:
         error_message = (
-            "No bundle initialized for your session. "
+            "No bundle initialized for your workflow. "
             "Please call initialize_bundle first to load a support bundle."
         )
-        logger.error(f"No bundle found for session {session_id[:8]}...")
+        logger.error(error_message)
         formatted_error = formatter.format_error(error_message)
         return [TextContent(type="text", text=formatted_error)]
 
@@ -577,21 +650,14 @@ async def list_files(
     bundle_manager = get_bundle_manager()
     formatter = get_formatter(verbosity)
 
-    # Get session ID and look up bundle
-    session_id = get_session_id()
-    if not session_id:
-        error_message = "Could not determine session ID. This tool requires MCP session context."
-        logger.error(error_message)
-        formatted_error = formatter.format_error(error_message)
-        return [TextContent(type="text", text=formatted_error)]
-
-    bundle_id = bundle_manager.get_bundle_for_session(session_id)
+    # Look up bundle using scope ID (workflow_run_id) or transport session ID
+    bundle_id = get_bundle_id_for_request()
     if not bundle_id:
         error_message = (
-            "No bundle initialized for your session. "
+            "No bundle initialized for your workflow. "
             "Please call initialize_bundle first to load a support bundle."
         )
-        logger.error(f"No bundle found for session {session_id[:8]}...")
+        logger.error(error_message)
         formatted_error = formatter.format_error(error_message)
         return [TextContent(type="text", text=formatted_error)]
 
@@ -658,21 +724,14 @@ async def read_file(
     bundle_manager = get_bundle_manager()
     formatter = get_formatter(verbosity)
 
-    # Get session ID and look up bundle
-    session_id = get_session_id()
-    if not session_id:
-        error_message = "Could not determine session ID. This tool requires MCP session context."
-        logger.error(error_message)
-        formatted_error = formatter.format_error(error_message)
-        return [TextContent(type="text", text=formatted_error)]
-
-    bundle_id = bundle_manager.get_bundle_for_session(session_id)
+    # Look up bundle using scope ID (workflow_run_id) or transport session ID
+    bundle_id = get_bundle_id_for_request()
     if not bundle_id:
         error_message = (
-            "No bundle initialized for your session. "
+            "No bundle initialized for your workflow. "
             "Please call initialize_bundle first to load a support bundle."
         )
-        logger.error(f"No bundle found for session {session_id[:8]}...")
+        logger.error(error_message)
         formatted_error = formatter.format_error(error_message)
         return [TextContent(type="text", text=formatted_error)]
 
@@ -754,21 +813,14 @@ async def grep_files(
     bundle_manager = get_bundle_manager()
     formatter = get_formatter(verbosity)
 
-    # Get session ID and look up bundle
-    session_id = get_session_id()
-    if not session_id:
-        error_message = "Could not determine session ID. This tool requires MCP session context."
-        logger.error(error_message)
-        formatted_error = formatter.format_error(error_message)
-        return [TextContent(type="text", text=formatted_error)]
-
-    bundle_id = bundle_manager.get_bundle_for_session(session_id)
+    # Look up bundle using scope ID (workflow_run_id) or transport session ID
+    bundle_id = get_bundle_id_for_request()
     if not bundle_id:
         error_message = (
-            "No bundle initialized for your session. "
+            "No bundle initialized for your workflow. "
             "Please call initialize_bundle first to load a support bundle."
         )
-        logger.error(f"No bundle found for session {session_id[:8]}...")
+        logger.error(error_message)
         formatted_error = formatter.format_error(error_message)
         return [TextContent(type="text", text=formatted_error)]
 
