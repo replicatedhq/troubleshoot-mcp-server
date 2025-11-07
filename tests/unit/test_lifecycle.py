@@ -142,10 +142,17 @@ async def test_bundle_manager_cleanup_called():
     mock_server.use_stdio = True
 
     # Create a test context with a mock bundle manager from the start
-    with patch("troubleshoot_mcp_server.lifecycle.BundleManager") as BundleManagerMock:
+    with (
+        patch("troubleshoot_mcp_server.lifecycle.BundleManager") as BundleManagerMock,
+        patch("troubleshoot_mcp_server.server.get_bundle_manager") as get_manager_mock,
+    ):
         # Create a mock bundle manager instance
         mock_bundle_manager = AsyncMock()
+        # Add session_bundles attribute that lifecycle code accesses
+        mock_bundle_manager.session_bundles = {}
         BundleManagerMock.return_value = mock_bundle_manager
+        # Make get_bundle_manager return None so lifecycle creates a new one
+        get_manager_mock.return_value = None
 
         # Run the lifecycle
         async with app_lifespan(mock_server):

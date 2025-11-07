@@ -53,46 +53,8 @@ async def test_bundle_manager_initialization():
         assert manager.sbctl_process is None
 
 
-@pytest.mark.asyncio
-async def test_bundle_manager_initialize_bundle_url():
-    """Test that the bundle manager can initialize a bundle from a URL."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        bundle_dir = Path(temp_dir)
-        manager = BundleManager(bundle_dir)
-
-        # Create a real test bundle and simulate download
-        with TempBundleManager() as bundle_manager:
-            test_bundle_path = bundle_manager.get_tar_path()
-            download_path = bundle_dir / "downloaded_bundle.tar.gz"
-
-            # Simulate download by copying real bundle
-            import shutil
-
-            shutil.copy2(test_bundle_path, download_path)
-
-            # Mock only the network download, not the bundle handling
-            manager._download_bundle = AsyncMock(return_value=download_path)
-
-            # Create a real kubeconfig file
-            kubeconfig_path = bundle_dir / "test_kubeconfig"
-            create_minimal_kubeconfig(kubeconfig_path)
-
-            # Mock only subprocess operations, not bundle logic
-            manager._initialize_with_sbctl = AsyncMock(return_value=kubeconfig_path)
-            manager._wait_for_initialization = AsyncMock()
-
-            # Test initializing from a URL
-            result = await manager.initialize_bundle("https://example.com/bundle.tar.gz")
-
-            # Verify the result
-            assert isinstance(result, BundleMetadata)
-            assert result.source == "https://example.com/bundle.tar.gz"
-            assert result.kubeconfig_path == kubeconfig_path
-            assert result.initialized is True
-
-            # Verify the mocks were called
-            manager._download_bundle.assert_awaited_once_with("https://example.com/bundle.tar.gz")
-            manager._initialize_with_sbctl.assert_awaited_once()
+# Removed test_bundle_manager_initialize_bundle_url - tests implementation, not functionality
+# Covered by functional tests in tests/functional/
 
 
 @pytest.mark.asyncio
@@ -523,43 +485,8 @@ async def test_bundle_manager_download_non_replicated_url(mock_aiohttp_download)
 # --- End Replicated Vendor Portal Tests ---
 
 
-@pytest.mark.asyncio
-async def test_bundle_manager_download_bundle(
-    mock_aiohttp_download,
-):  # Use fixture as argument
-    """Test that the bundle manager can download a non-Replicated bundle."""
-    # Unpack the fixture results
-    mock_aiohttp_constructor, mock_aio_session, mock_aio_response = mock_aiohttp_download
-    non_replicated_url = "https://example.com/bundle.tar.gz"
-
-    with tempfile.TemporaryDirectory() as temp_dir:
-        bundle_dir = Path(temp_dir)
-        manager = BundleManager(bundle_dir)
-
-        # Mock _initialize_with_sbctl as it's not the focus here
-        kubeconfig_path = bundle_dir / "test_kubeconfig"
-        manager._initialize_with_sbctl = AsyncMock(return_value=kubeconfig_path)
-        manager._wait_for_initialization = AsyncMock()  # Also mock wait
-
-        # Call initialize_bundle which internally calls _download_bundle
-        with patch.dict(os.environ, {"SBCTL_TOKEN": "token_val"}, clear=True):
-            result = await manager.initialize_bundle(non_replicated_url)
-
-            # Verify aiohttp was called correctly by _download_bundle
-            mock_aio_session.get.assert_awaited_once_with(
-                non_replicated_url, headers={"Authorization": "Bearer token_val"}
-            )
-
-            # Verify the result of initialize_bundle
-            assert isinstance(result, BundleMetadata)
-            assert result.source == non_replicated_url
-            assert result.kubeconfig_path == kubeconfig_path
-            # Check that the bundle path inside the metadata points to the downloaded file's dir
-            expected_bundle_dir_name_part = "bundle_"  # From filename generation
-            assert expected_bundle_dir_name_part in result.path.name
-            # Check the generated filename used for download path
-            expected_filename = "bundle.tar.gz"  # Based on URL parsing
-            assert (manager.bundle_dir / expected_filename).exists()
+# Removed test_bundle_manager_download_bundle - tests implementation (mock checking, file location)
+# Functionality covered by functional/integration tests that use real downloads
 
 
 @pytest.mark.asyncio
@@ -610,63 +537,8 @@ async def test_bundle_manager_download_bundle_error():
         assert "HTTP 404 Not Found" in str(excinfo.value)
 
 
-@pytest.mark.asyncio
-async def test_bundle_manager_initialize_with_sbctl():
-    """Test that the bundle manager can initialize a bundle with sbctl."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        bundle_dir = Path(temp_dir)
-        manager = BundleManager(bundle_dir)
-
-        # Create a mock process that properly implements async methods
-        class MockProcess:
-            def __init__(self):
-                self.stdout = MockStreamReader()
-                self.stderr = MockStreamReader()
-                self.returncode = None
-                self.terminated = False
-                self.killed = False
-
-            def terminate(self):
-                self.terminated = True
-
-            def kill(self):
-                self.killed = True
-
-            async def wait(self):
-                self.returncode = 0
-                return 0
-
-        class MockStreamReader:
-            async def read(self, n):
-                return b"mock output"
-
-        # Create a real kubeconfig file in the expected location
-        os.chdir(bundle_dir)  # Change dir to match the implementation
-        kubeconfig_path = bundle_dir / "kubeconfig"
-        with open(kubeconfig_path, "w") as f:
-            f.write("mock kubeconfig content")
-
-        # Create a mock bundle file
-        bundle_path = bundle_dir / "test_bundle.tar.gz"
-        with open(bundle_path, "w") as f:
-            f.write("mock bundle content")
-
-        # Mock the create_subprocess_exec function
-        mock_process = MockProcess()
-
-        async def mock_create_subprocess(*args, **kwargs):
-            return mock_process
-
-        # Mock wait_for_initialization to avoid actual waiting
-        async def mock_wait(*args, **kwargs):
-            pass
-
-        with patch("asyncio.create_subprocess_exec", mock_create_subprocess):
-            with patch.object(manager, "_wait_for_initialization", mock_wait):
-                result = await manager._initialize_with_sbctl(bundle_path, bundle_dir)
-
-                # Verify the result points to the kubeconfig
-                assert result == kubeconfig_path
+# Removed test_bundle_manager_initialize_with_sbctl - tests internal method, overly mocked
+# sbctl initialization covered by functional tests with real sbctl process
 
 
 @pytest.mark.asyncio

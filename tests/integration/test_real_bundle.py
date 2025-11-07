@@ -210,7 +210,7 @@ async def test_bundle_initialization_workflow(bundle_manager_fixture, test_asser
         dir_entries = [e for e in root_list.entries if e.type == "dir"]
         if dir_entries:
             # Navigate into the first directory
-            first_dir = dir_entries[0].name
+            first_dir = dir_entries[0].path
             dir_contents = await explorer.list_files(first_dir, False)
 
             # Verify behavior - can list contents of subdirectory

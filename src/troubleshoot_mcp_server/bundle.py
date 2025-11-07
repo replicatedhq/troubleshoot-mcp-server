@@ -8,6 +8,7 @@ extraction, initialization, and cleanup.
 
 import asyncio
 from collections import deque
+from dataclasses import dataclass, field
 import datetime
 import json
 import logging
@@ -19,8 +20,9 @@ import signal
 import socket
 import tarfile
 import tempfile
+import time
 from pathlib import Path
-from typing import List, Optional, Tuple, Union
+from typing import Dict, List, Literal, Optional, Tuple, Union
 from urllib.parse import urlparse
 
 import aiohttp
@@ -117,6 +119,41 @@ class BundleMetadata(BaseModel):
         False,
         description="Whether this bundle contains only host resources (no cluster resources)",
     )
+
+
+@dataclass
+class BundleState:
+    """
+    State tracking for a single bundle in concurrent SSE mode.
+
+    This replaces the global active_bundle pattern with per-bundle state management.
+    Each bundle has its own lifecycle state, process handle, and synchronization primitives.
+
+    Attributes:
+        bundle_id: Unique identifier for this bundle
+        metadata: Bundle metadata (None until initialization completes)
+        process: sbctl subprocess handle (None if not running)
+        status: Current lifecycle state
+        lock: Per-bundle lock for serializing operations
+        epoch: Generation counter to prevent late events from old processes
+        cancel_requested: Flag indicating termination was requested
+        current_event: Per-epoch event for the current initialization attempt
+        stopped_event: Event signaled when process stops
+        start_time: Timestamp when this state was created
+        last_error: Most recent error message (if status is "failed")
+    """
+
+    bundle_id: str
+    metadata: Optional[BundleMetadata]
+    process: Optional[asyncio.subprocess.Process]
+    status: Literal["initializing", "running", "stopping", "stopped", "failed"]
+    lock: asyncio.Lock
+    epoch: int = 0
+    cancel_requested: bool = False
+    current_event: asyncio.Event = field(default_factory=asyncio.Event)
+    stopped_event: asyncio.Event = field(default_factory=asyncio.Event)
+    start_time: float = field(default_factory=time.time)
+    last_error: Optional[str] = None
 
 
 class InitializeBundleArgs(BaseModel):
@@ -247,7 +284,12 @@ class BundleManager:
         self.bundle_dir = bundle_dir or Path(tempfile.mkdtemp(prefix="k8s-bundle-"))
         self.bundle_dir.mkdir(parents=True, exist_ok=True)
 
-        # Track multiple concurrent bundles (CONCURRENT SUPPORT)
+        # NEW: Concurrent bundle state management (replaces active_bundle pattern)
+        self._registry_lock = asyncio.Lock()  # Atomic state creation
+        self.bundle_states: Dict[str, BundleState] = {}  # Per-bundle state tracking
+        self.source_to_bundle_id: Dict[str, str] = {}  # Maps source URL/path -> bundle_id for deduplication
+
+        # LEGACY: Track multiple concurrent bundles (will be replaced by bundle_states)
         self.bundles: dict[str, BundleMetadata] = {}
         self.sbctl_processes: dict[str, asyncio.subprocess.Process] = {}
         self.active_bundle_id: Optional[str] = None
@@ -264,12 +306,78 @@ class BundleManager:
         self._last_timeout_command: Optional[str] = None
         self._crash_recovery_info: Optional[dict] = None
 
-        # Single bundle mode: treat bundle presence as activation
+        # Legacy single_bundle_mode (to be removed in follow-up task)
+        # Currently needed by _auto_activate_bundle_if_exists() function
         self.single_bundle_mode = (
             os.environ.get("MCP_SINGLE_BUNDLE_MODE", "false").lower() == "true"
         )
-        if self.single_bundle_mode:
-            logger.info("Single bundle mode enabled: bundle presence = activation")
+
+    async def _get_or_create_state(self, bundle_id: str) -> BundleState:
+        """
+        Atomically get or create BundleState for the given bundle_id.
+
+        This method uses the registry lock to ensure only one BundleState
+        is created per bundle_id, preventing race conditions when multiple
+        tasks try to initialize the same bundle simultaneously.
+
+        Args:
+            bundle_id: The bundle identifier
+
+        Returns:
+            BundleState for the given bundle_id (either existing or newly created)
+        """
+        async with self._registry_lock:
+            if bundle_id not in self.bundle_states:
+                logger.debug(f"Creating new BundleState for bundle: {bundle_id}")
+                self.bundle_states[bundle_id] = BundleState(
+                    bundle_id=bundle_id,
+                    metadata=None,
+                    process=None,
+                    status="stopped",  # Start as stopped, not initializing
+                    lock=asyncio.Lock(),
+                    epoch=0,
+                    cancel_requested=False,
+                    current_event=asyncio.Event(),
+                    stopped_event=asyncio.Event(),
+                    start_time=time.time(),
+                    last_error=None,
+                )
+            return self.bundle_states[bundle_id]
+
+    async def _wait_for_latest(self, state: BundleState) -> BundleMetadata:
+        """
+        Wait for the latest initialization to complete and return its metadata.
+
+        Used when this attempt was superseded by a newer epoch. Waits for
+        the current epoch's event to signal, then returns the metadata.
+
+        Args:
+            state: The bundle state to wait on
+
+        Returns:
+            The latest metadata after waiting
+
+        Raises:
+            BundleManagerError: If the latest initialization failed
+        """
+        # Capture current event
+        async with state.lock:
+            current_event = state.current_event
+            current_epoch = state.epoch
+
+        # Wait for current epoch to complete
+        logger.debug(f"[Bundle {state.bundle_id}] Waiting for epoch {current_epoch} to complete...")
+        await current_event.wait()
+
+        # Return the result
+        async with state.lock:
+            if state.status == "failed":
+                raise BundleManagerError(
+                    f"Bundle initialization failed: {state.last_error or 'Unknown error'}"
+                )
+            if state.metadata:
+                return state.metadata
+            raise BundleManagerError("Bundle initialization completed but metadata is missing")
 
     async def _load_bundle_from_disk_if_needed(self, bundle_id: str) -> Optional[BundleMetadata]:
         """Lazy-load bundle from disk if not in memory and restart sbctl if needed.
@@ -580,12 +688,21 @@ class BundleManager:
             session_id: MCP session identifier
 
         Returns:
-            Bundle ID if found, None otherwise
+            Bundle ID if found and in valid state, None otherwise
         """
         # Check in-memory mapping first
         bundle_id = self.session_bundles.get(session_id)
         if bundle_id:
-            return bundle_id
+            # Verify bundle is in valid state (if using bundle_states)
+            if bundle_id in self.bundle_states:
+                state = self.bundle_states[bundle_id]
+                if state.status in ("running", "initializing"):
+                    return bundle_id
+                logger.debug(
+                    f"Bundle {bundle_id} for session {session_id[:16]}... in state {state.status}, not available"
+                )
+                return None
+            return bundle_id  # Legacy path: bundle_id found but no state tracking yet
 
         # Fallback: check if session_id itself is a bundle directory on disk
         # This allows stateless operation - if bundle was initialized with
@@ -620,13 +737,16 @@ class BundleManager:
         self, source: str, force: bool = False, token: Optional[str] = None, bundle_id: Optional[str] = None
     ) -> BundleMetadata:
         """
-        Initialize a support bundle from a source.
+        Initialize a support bundle from a source with concurrent-safe bundle management.
+
+        This method uses per-bundle state tracking and coordination to support
+        concurrent bundle initialization in SSE mode while maintaining stdio compatibility.
 
         Args:
             source: The source of the bundle (URL or local path)
-            force: Whether to force re-initialization if a bundle is already active
+            force: Whether to force re-initialization if bundle is already running
             token: Optional SBCTL token for authenticated downloads (overrides SBCTL_TOKEN env var)
-            bundle_id: Optional explicit bundle ID (if None, generates from source hash)
+            bundle_id: Optional explicit bundle ID (if None, generates from source)
 
         Returns:
             Metadata for the initialized bundle
@@ -634,31 +754,68 @@ class BundleManager:
         Raises:
             BundleManagerError: If the bundle could not be initialized
         """
-        if self.active_bundle and not force:
-            logger.info(f"Using already initialized bundle: {self.active_bundle.id}")
-            return self.active_bundle
+        # 1. Resolve bundle_id early (before any state operations)
+        if not bundle_id:
+            # Check if we already have a bundle for this source (prevents duplicates when force=False)
+            cached_id = self.source_to_bundle_id.get(source)
+            if cached_id and cached_id in self.bundle_states:
+                bundle_id = cached_id
+                logger.debug(f"Using existing bundle_id {bundle_id} for source: {source}")
+            else:
+                bundle_id = self._generate_bundle_id(source)
+                self.source_to_bundle_id[source] = bundle_id
+                logger.debug(f"Generated new bundle_id {bundle_id} for source: {source}")
 
-        await self._cleanup_active_bundle()
+        logger.info(f"[Bundle {bundle_id}] Initializing from source: {source}")
 
-        # Single bundle mode: always clean up ALL existing bundles first (not just active)
-        if self.single_bundle_mode:
-            logger.info(
-                "Single bundle mode: cleaning up all existing bundles before initialization"
-            )
-            try:
-                for bundle_dir in self.bundle_dir.iterdir():
-                    if bundle_dir.is_dir():
-                        try:
-                            shutil.rmtree(bundle_dir, ignore_errors=True)
-                            logger.info(f"Cleaned up bundle directory: {bundle_dir}")
-                        except Exception as e:
-                            logger.error(f"Error cleaning up bundle directory {bundle_dir}: {e}")
-            except Exception as e:
-                logger.error(f"Error listing bundle directories for cleanup: {e}")
+        # 2. Get or create bundle state atomically
+        state = await self._get_or_create_state(bundle_id)
 
-        logger.info(f"Initializing bundle from source: {source}")
+        # 4. Coordination loop: handle concurrent initialization attempts
+        my_epoch: Optional[int] = None
+        my_event: Optional[asyncio.Event] = None
+
+        while True:
+            async with state.lock:
+                logger.debug(
+                    f"[Bundle {bundle_id}][Epoch {state.epoch}] Status: {state.status}, Force: {force}"
+                )
+
+                # Fast path: bundle already running
+                if state.status == "running" and not force:
+                    logger.info(f"[Bundle {bundle_id}] Already running, returning existing metadata")
+                    return state.metadata
+
+                # Wait path: another initialization in progress
+                if state.status == "initializing" and not force:
+                    waiter = state.current_event
+                    logger.info(
+                        f"[Bundle {bundle_id}][Epoch {state.epoch}] Another initialization in progress, waiting"
+                    )
+                    # Will await outside lock
+                else:
+                    # Start new initialization attempt
+                    state.epoch += 1
+                    my_epoch = state.epoch
+                    my_event = asyncio.Event()
+                    state.current_event = my_event
+                    state.status = "initializing"
+                    state.last_error = None
+                    state.metadata = None
+                    logger.info(
+                        f"[Bundle {bundle_id}][Epoch {my_epoch}] Starting new initialization attempt"
+                    )
+                    break  # Exit loop to perform initialization
+
+            # Wait for ongoing initialization, then re-check state
+            logger.debug(f"[Bundle {bundle_id}] Waiting for epoch to complete...")
+            await waiter.wait()
+            logger.debug(f"[Bundle {bundle_id}] Wait completed, re-checking state")
+
+        # 5. Perform initialization WITHOUT holding lock (long operations)
         try:
-            # Determine if the source is a URL or local file
+            # Download or locate bundle (LONG OPERATION)
+            logger.info(f"[Bundle {bundle_id}][Epoch {my_epoch}] Downloading/locating bundle...")
             if source.startswith(("http://", "https://")):
                 bundle_path = await self._download_bundle(source, token=token)
             else:
@@ -675,14 +832,10 @@ class BundleManager:
                     else:
                         # Also check if there's a bundle with matching relative_path in available bundles
                         try:
-                            available_bundles = await self.list_available_bundles(
-                                include_invalid=True
-                            )
+                            available_bundles = await self.list_available_bundles(include_invalid=True)
                             for bundle in available_bundles:
                                 if bundle.relative_path == source or bundle.name == source:
-                                    logger.info(
-                                        f"Found matching bundle by relative path: {bundle.path}"
-                                    )
+                                    logger.info(f"Found matching bundle by relative path: {bundle.path}")
                                     bundle_path = Path(bundle.path)
                                     break
                         except Exception as e:
@@ -694,95 +847,92 @@ class BundleManager:
                         f"Bundle not found: {source} (tried both as absolute path and in bundle directory {self.bundle_dir})"
                     )
 
-            # Generate a unique ID for the bundle (or use provided one for session-based naming)
-            if not bundle_id:
-                bundle_id = self._generate_bundle_id(source)
+            # Check epoch: superseded by newer attempt?
+            if state.epoch != my_epoch:
+                logger.info(f"[Bundle {bundle_id}][Epoch {my_epoch}] Superseded during download, exiting gracefully")
+                my_event.set()
+                async with state.lock:
+                    return state.metadata if state.metadata else await self._wait_for_latest(state)
 
-            # Set as active bundle BEFORE initialization so sbctl_process property works correctly
-            self.active_bundle_id = bundle_id
-
-            # Create a directory for the bundle
+            # Create bundle directory
             bundle_output_dir = self.bundle_dir / bundle_id
             bundle_output_dir.mkdir(parents=True, exist_ok=True)
 
-            # FIX: Move the tarball into bundle directory for auto-activation persistence
-            # Auto-activation looks for bundle.tar.gz in the bundle directory
+            # Move tarball into bundle directory for persistence
             if source.startswith(("http://", "https://")):
                 bundle_tarball_dest = bundle_output_dir / "bundle.tar.gz"
-                logger.info(
-                    f"Moving tarball for persistence: {bundle_path} -> {bundle_tarball_dest}"
-                )
+                logger.info(f"[Bundle {bundle_id}][Epoch {my_epoch}] Moving tarball for persistence")
                 shutil.move(str(bundle_path), str(bundle_tarball_dest))
-                # Use the moved tarball for initialization
                 bundle_path_for_init = bundle_tarball_dest
             else:
-                # Local file - use as-is
                 bundle_path_for_init = bundle_path
 
-            # Initialize the bundle with sbctl (pass bundle_id to prevent race condition)
+            # Check epoch before sbctl initialization
+            if state.epoch != my_epoch:
+                logger.info(f"[Bundle {bundle_id}][Epoch {my_epoch}] Superseded before sbctl init, exiting")
+                my_event.set()
+                async with state.lock:
+                    return state.metadata if state.metadata else await self._wait_for_latest(state)
+
+            # Initialize with sbctl (LONG OPERATION)
+            logger.info(f"[Bundle {bundle_id}][Epoch {my_epoch}] Initializing with sbctl...")
             kubeconfig_path = await self._initialize_with_sbctl(
                 bundle_path_for_init, bundle_output_dir, bundle_id
             )
 
-            # Handle case where no kubeconfig was created (host-only bundle)
+            # Check epoch after sbctl initialization
+            if state.epoch != my_epoch:
+                logger.info(f"[Bundle {bundle_id}][Epoch {my_epoch}] Superseded after sbctl init, exiting")
+                my_event.set()
+                async with state.lock:
+                    return state.metadata if state.metadata else await self._wait_for_latest(state)
+
+            # Handle host-only bundles
             if self._host_only_bundle:
-                # Create a dummy kubeconfig path for host-only bundles (but don't create the file)
                 kubeconfig_path = bundle_output_dir / "kubeconfig"
 
-            # Debug: List all files in the bundle directory to diagnose file listing issues
+            # Extract and validate bundle (LONG OPERATION)
+            logger.info(f"[Bundle {bundle_id}][Epoch {my_epoch}] Extracting and validating...")
             try:
                 logger.info(f"Listing files in bundle directory: {bundle_output_dir}")
-                # First count files recursively
                 file_count = 0
                 dir_count = 0
                 for root, dirs, files in os.walk(bundle_output_dir):
                     dir_count += len(dirs)
                     file_count += len(files)
 
-                logger.info(
-                    f"Bundle directory contains {file_count} files and {dir_count} directories"
-                )
+                logger.info(f"Bundle directory contains {file_count} files and {dir_count} directories")
 
-                # List top-level entries
                 top_entries = list(bundle_output_dir.glob("*"))
-                logger.info(
-                    f"Top-level entries in bundle directory: {[e.name for e in top_entries]}"
-                )
+                logger.info(f"Top-level entries in bundle directory: {[e.name for e in top_entries]}")
 
-                # Also check if extracted_dir exists or needs to be created
+                # Extract if needed
                 extract_dir = bundle_output_dir / "extracted"
                 if not extract_dir.exists():
                     logger.info(f"Creating extract directory: {extract_dir}")
                     extract_dir.mkdir(exist_ok=True)
 
-                    # Extract the bundle if it's a tarfile - ensure support bundle extraction succeeds
-                    # Support bundles often have complex structures, so we need to handle them properly
-                    tarball_path = bundle_output_dir / "bundle.tar.gz"
-                    if tarball_path.exists() and str(tarball_path).endswith((".tar.gz", ".tgz")):
+                    # Use bundle_path_for_init which points to the actual tarball
+                    if bundle_path_for_init.exists() and str(bundle_path_for_init).endswith((".tar.gz", ".tgz")):
                         import tarfile
 
-                        logger.info(f"Extracting bundle to: {extract_dir}")
-                        with tarfile.open(tarball_path, "r:gz") as tar:
-                            # First list the files to get a count
+                        logger.info(f"Extracting bundle from {bundle_path_for_init} to: {extract_dir}")
+                        with tarfile.open(bundle_path_for_init, "r:gz") as tar:
                             members = tar.getmembers()
                             logger.info(f"Support bundle contains {len(members)} entries")
 
-                            # Extract all files
+                            # Sanitize member paths
                             from pathlib import PurePath
 
                             safe_members = []
                             for member in members:
-                                # Make path safe by removing absolute paths and parent dir traversal
                                 if member.name.startswith(("/", "../")):
-                                    # Remove leading slashes and parent directory traversal
                                     member.name = PurePath(member.name).name
                                 safe_members.append(member)
 
-                            # Extract with the sanitized member list
-                            # Use filter='data' to only extract file data without modifying metadata
                             tar.extractall(path=extract_dir, members=safe_members, filter="data")
 
-                        # List extracted files and verify extraction was successful
+                        # Verify extraction
                         file_count = 0
                         dir_count = 0
                         for root, dirs, files in os.walk(extract_dir):
@@ -790,16 +940,19 @@ class BundleManager:
                             file_count += len(files)
 
                         extracted_files = list(extract_dir.glob("*"))
-                        logger.info(
-                            f"Extracted {len(extracted_files)} top-level entries to {extract_dir}"
-                        )
-                        logger.info(
-                            f"Extracted bundle contains {file_count} files and {dir_count} directories"
-                        )
+                        logger.info(f"Extracted {len(extracted_files)} top-level entries to {extract_dir}")
+                        logger.info(f"Extracted bundle contains {file_count} files and {dir_count} directories")
             except Exception as list_err:
-                logger.warning(f"Error while listing bundle files: {list_err}")
+                logger.warning(f"Error while listing/extracting bundle files: {list_err}")
 
-            # Create and store bundle metadata
+            # Check epoch before finalizing
+            if state.epoch != my_epoch:
+                logger.info(f"[Bundle {bundle_id}][Epoch {my_epoch}] Superseded during extraction, exiting")
+                my_event.set()
+                async with state.lock:
+                    return state.metadata if state.metadata else await self._wait_for_latest(state)
+
+            # 6. Create metadata
             metadata = BundleMetadata(
                 id=bundle_id,
                 source=source,
@@ -808,19 +961,57 @@ class BundleManager:
                 initialized=True,
                 host_only_bundle=self._host_only_bundle,
             )
-            self.active_bundle = metadata
 
-            # Start stderr monitoring now that initialization is complete
+            # 7. Finalize state under lock
+            async with state.lock:
+                if state.epoch == my_epoch:
+                    state.metadata = metadata
+                    state.process = self.sbctl_processes.get(bundle_id)
+                    state.status = "running"
+                    state.last_error = None
+                    logger.info(f"[Bundle {bundle_id}][Epoch {my_epoch}] Initialization complete, status=running")
+                else:
+                    logger.info(
+                        f"[Bundle {bundle_id}][Epoch {my_epoch}] Superseded during finalization, newer epoch owns state"
+                    )
+
+            # 8. Signal completion (always, even if superseded)
+            my_event.set()
+
+            # 9. Set as active_bundle ONLY in single_bundle_mode
+            # In concurrent mode, do NOT set active_bundle to avoid race conditions
+            # where cleanup() might kill the wrong bundle's process
+            if self.single_bundle_mode:
+                self.active_bundle = metadata
+                logger.debug(f"[Bundle {bundle_id}] Set as active_bundle (single_bundle_mode)")
+            else:
+                logger.debug(f"[Bundle {bundle_id}] Skipping active_bundle assignment (concurrent mode)")
+
+            # 10. Start stderr monitoring
             self._start_stderr_monitoring()
 
-            logger.info(f"Bundle initialized: {bundle_id}")
+            logger.info(f"Bundle initialized successfully: {bundle_id}")
             return metadata
 
         except (BundleDownloadError, BundleInitializationError) as e:
-            logger.error(f"Failed to initialize bundle: {str(e)}")
+            # Handle expected errors
+            logger.error(f"[Bundle {bundle_id}][Epoch {my_epoch}] Failed to initialize: {str(e)}")
+            if my_event:
+                async with state.lock:
+                    if state.epoch == my_epoch:
+                        state.status = "failed"
+                        state.last_error = str(e)
+                my_event.set()
             raise
         except Exception as e:
-            logger.exception(f"Unexpected error initializing bundle: {str(e)}")
+            # Handle unexpected errors
+            logger.exception(f"[Bundle {bundle_id}][Epoch {my_epoch}] Unexpected error: {str(e)}")
+            if my_event:
+                async with state.lock:
+                    if state.epoch == my_epoch:
+                        state.status = "failed"
+                        state.last_error = str(e)
+                my_event.set()
             raise BundleManagerError(f"Failed to initialize bundle: {str(e)}")
 
     def _calculate_retry_delay(self, attempt: int) -> float:
@@ -1285,33 +1476,35 @@ class BundleManager:
             # await self._terminate_sbctl_process()  # REMOVED for concurrent support
 
             # Start sbctl in serve mode with the bundle in the output directory
-            await self._start_sbctl_process(bundle_path, output_dir)
+            await self._start_sbctl_process(bundle_path, output_dir, bundle_id)
+
+            # Capture process locally to avoid race condition with concurrent bundle operations
+            # IMPORTANT: Don't use self.sbctl_process property - it can change when active_bundle_id changes
+            sbctl_process = self.sbctl_processes.get(bundle_id)
+            if not sbctl_process:
+                raise BundleInitializationError("Failed to start sbctl process")
 
             # First, wait a brief moment to see if sbctl exits quickly with "No cluster resources"
             try:
-                # Ensure process was started successfully
-                if not self.sbctl_process:
-                    raise BundleInitializationError("Failed to start sbctl process")
-
                 # Wait for either process completion or a short timeout
-                await asyncio.wait_for(self.sbctl_process.wait(), timeout=5.0)
+                await asyncio.wait_for(sbctl_process.wait(), timeout=5.0)
 
                 # Process completed quickly - check output
                 stdout_data = b""
                 stderr_data = b""
 
-                if self.sbctl_process.stdout:
+                if sbctl_process.stdout:
                     try:
                         stdout_data = await asyncio.wait_for(
-                            self.sbctl_process.stdout.read(), timeout=1.0
+                            sbctl_process.stdout.read(), timeout=1.0
                         )
                     except (asyncio.TimeoutError, Exception):
                         pass
 
-                if self.sbctl_process.stderr:
+                if sbctl_process.stderr:
                     try:
                         stderr_data = await asyncio.wait_for(
-                            self.sbctl_process.stderr.read(), timeout=1.0
+                            sbctl_process.stderr.read(), timeout=1.0
                         )
                     except (asyncio.TimeoutError, Exception):
                         pass
@@ -1330,10 +1523,24 @@ class BundleManager:
                     self._host_only_bundle = True
                     return kubeconfig_path  # Return dummy path, file won't exist but that's OK
 
+                # Check if this was an intentional termination (SIGTERM = exit code -15)
+                if sbctl_process.returncode == -15:
+                    # Check cancel_requested from bundle state
+                    if bundle_id in self.bundle_states:
+                        if self.bundle_states[bundle_id].cancel_requested:
+                            logger.debug(
+                                f"[Bundle {bundle_id}] sbctl process terminated intentionally (cancel_requested=True)"
+                            )
+                            return kubeconfig_path
+                    # Fallback to legacy global flag
+                    if self._termination_requested:
+                        logger.debug("sbctl process was intentionally terminated during initialization (quick-exit)")
+                        return kubeconfig_path
+
                 # If we get here, sbctl exited quickly but not due to "no cluster resources"
                 # Check the exit code to determine if it's an error
-                if self.sbctl_process.returncode != 0:
-                    error_msg = f"sbctl process exited with code {self.sbctl_process.returncode}"
+                if sbctl_process.returncode != 0:
+                    error_msg = f"sbctl process exited with code {sbctl_process.returncode}"
                     if all_output.strip():
                         error_msg += f". Output: {all_output.strip()}"
 
@@ -1349,13 +1556,13 @@ class BundleManager:
                 # Process didn't exit quickly, so it's likely starting up an API server
                 # Try to read stdout line by line to get kubeconfig path quickly
                 try:
-                    if self.sbctl_process and self.sbctl_process.stdout:
+                    if sbctl_process and sbctl_process.stdout:
                         # Try to read the first few lines to catch the kubeconfig announcement
                         stdout_lines = []
                         for attempt in range(10):  # Try up to 10 lines or 5 seconds
                             try:
                                 line = await asyncio.wait_for(
-                                    self.sbctl_process.stdout.readline(), timeout=0.5
+                                    sbctl_process.stdout.readline(), timeout=0.5
                                 )
                                 if not line:  # EOF
                                     break
@@ -1412,8 +1619,8 @@ class BundleManager:
                 # Continue with normal initialization
                 logger.debug("sbctl process continuing, proceeding with normal initialization")
 
-            # Wait for initialization to complete
-            await self._wait_for_initialization(kubeconfig_path)
+            # Wait for initialization to complete (pass bundle_id and process explicitly)
+            await self._wait_for_initialization(kubeconfig_path, bundle_id, sbctl_process)
 
             if not kubeconfig_path.exists():
                 raise BundleInitializationError(
@@ -1428,10 +1635,10 @@ class BundleManager:
             stderr_output = ""
 
             # Try to capture any stderr output from the process for better diagnostics
-            if self.sbctl_process and self.sbctl_process.stderr:
+            if sbctl_process and sbctl_process.stderr:
                 try:
                     stderr_data = await asyncio.wait_for(
-                        self.sbctl_process.stderr.read(4096), timeout=1.0
+                        sbctl_process.stderr.read(4096), timeout=1.0
                     )
                     if stderr_data:
                         stderr_output = stderr_data.decode("utf-8", errors="replace")
@@ -1454,13 +1661,19 @@ class BundleManager:
             )
 
     async def _wait_for_initialization(
-        self, kubeconfig_path: Path, timeout: float = MAX_INITIALIZATION_TIMEOUT
+        self,
+        kubeconfig_path: Path,
+        bundle_id: str,
+        sbctl_process: asyncio.subprocess.Process,
+        timeout: float = MAX_INITIALIZATION_TIMEOUT,
     ) -> None:
         """
         Wait for sbctl initialization to complete.
 
         Args:
             kubeconfig_path: The path to the kubeconfig file
+            bundle_id: The bundle ID (for cancel_requested checks)
+            sbctl_process: The sbctl process to monitor (explicit param to avoid race conditions)
             timeout: The maximum time to wait for initialization
 
         Raises:
@@ -1483,29 +1696,29 @@ class BundleManager:
         alternative_kubeconfig_paths = []
 
         # Attempt to read process output for diagnostic purposes
-        if self.sbctl_process and self.sbctl_process.stdout and self.sbctl_process.stderr:
+        if sbctl_process and sbctl_process.stdout and sbctl_process.stderr:
             stdout_data = b""
             stderr_data = b""
 
             try:
                 # Try to read without blocking the entire process
                 # We need to handle the coroutines properly for type checking
-                if self.sbctl_process.stdout is not None:
+                if sbctl_process.stdout is not None:
                     try:
                         # We expect bytes returned from the process stdout
                         stdout_data = await asyncio.wait_for(
-                            self.sbctl_process.stdout.read(1024), timeout=1.0
+                            sbctl_process.stdout.read(1024), timeout=1.0
                         )
                     except (asyncio.TimeoutError, Exception):
                         stdout_data = b""
                 else:
                     stdout_data = b""
 
-                if self.sbctl_process.stderr is not None:
+                if sbctl_process.stderr is not None:
                     try:
                         # We expect bytes returned from the process stderr
                         stderr_data = await asyncio.wait_for(
-                            self.sbctl_process.stderr.read(1024), timeout=1.0
+                            sbctl_process.stderr.read(1024), timeout=1.0
                         )
                     except (asyncio.TimeoutError, Exception):
                         stderr_data = b""
@@ -1590,22 +1803,22 @@ class BundleManager:
         while asyncio.get_event_loop().time() - start_time < timeout:
             # First check if the process is still running - if it exited with an error,
             # we should fail immediately instead of waiting for timeout
-            if self.sbctl_process and self.sbctl_process.returncode is not None:
+            if sbctl_process and sbctl_process.returncode is not None:
                 # Process exited - check if this is expected
-                if self.sbctl_process.returncode != 0:
+                if sbctl_process.returncode != 0:
                     # Process failed - read any error output and fail immediately
                     process_output = ""
                     try:
-                        if self.sbctl_process.stdout:
-                            stdout_data = await self.sbctl_process.stdout.read()
+                        if sbctl_process.stdout:
+                            stdout_data = await sbctl_process.stdout.read()
                             process_output += stdout_data.decode("utf-8", errors="replace")
-                        if self.sbctl_process.stderr:
-                            stderr_data = await self.sbctl_process.stderr.read()
+                        if sbctl_process.stderr:
+                            stderr_data = await sbctl_process.stderr.read()
                             process_output += stderr_data.decode("utf-8", errors="replace")
                     except Exception:
                         pass
 
-                    error_msg = f"sbctl process exited with code {self.sbctl_process.returncode} before initialization completed"
+                    error_msg = f"sbctl process exited with code {sbctl_process.returncode} before initialization completed"
                     if process_output.strip():
                         error_msg += f". Process output: {process_output.strip()}"
 
@@ -1726,25 +1939,25 @@ class BundleManager:
                         return
 
             # Check if the process is still running
-            if self.sbctl_process and self.sbctl_process.returncode is not None:
+            if sbctl_process and sbctl_process.returncode is not None:
                 # Process exited before kubeconfig was created
-                if self.sbctl_process.returncode == 0:
+                if sbctl_process.returncode == 0:
                     # Process exited successfully - check if this is the "no cluster resources" case
                     try:
                         # Read any remaining stdout/stderr to check for the "no cluster resources" message
                         process_output = ""
-                        if self.sbctl_process.stdout:
+                        if sbctl_process.stdout:
                             try:
                                 stdout_data = await asyncio.wait_for(
-                                    self.sbctl_process.stdout.read(), timeout=1.0
+                                    sbctl_process.stdout.read(), timeout=1.0
                                 )
                                 process_output += stdout_data.decode("utf-8", errors="replace")
                             except (asyncio.TimeoutError, Exception):
                                 pass
-                        if self.sbctl_process.stderr:
+                        if sbctl_process.stderr:
                             try:
                                 stderr_data = await asyncio.wait_for(
-                                    self.sbctl_process.stderr.read(), timeout=1.0
+                                    sbctl_process.stderr.read(), timeout=1.0
                                 )
                                 process_output += stderr_data.decode("utf-8", errors="replace")
                             except (asyncio.TimeoutError, Exception):
@@ -1772,11 +1985,19 @@ class BundleManager:
                         # Continue with normal error handling
 
                 # Check if this was an intentional termination (SIGTERM/-15)
-                if self.sbctl_process.returncode == -15 and self._termination_requested:
-                    logger.debug("sbctl process was intentionally terminated during cleanup")
+                cancel_requested = False
+                if bundle_id in self.bundle_states:
+                    cancel_requested = self.bundle_states[bundle_id].cancel_requested
+                elif self._termination_requested:  # Fallback to legacy global flag
+                    cancel_requested = True
+
+                if sbctl_process.returncode == -15 and cancel_requested:
+                    logger.debug(
+                        f"[Bundle {bundle_id}] sbctl process was intentionally terminated during initialization"
+                    )
                     return  # Exit gracefully without raising an error
 
-                error_message = f"sbctl process exited with code {self.sbctl_process.returncode} before initialization completed"
+                error_message = f"sbctl process exited with code {sbctl_process.returncode} before initialization completed"
                 break
 
             # Search for any newly created kubeconfig files in common locations if enabled
@@ -1947,7 +2168,7 @@ class BundleManager:
         return recovery_info
 
     async def _start_sbctl_process(
-        self, bundle_path: Path, working_dir: Optional[Path] = None
+        self, bundle_path: Path, working_dir: Optional[Path] = None, bundle_id: Optional[str] = None
     ) -> None:
         """
         Start the sbctl process with the given bundle.
@@ -1955,12 +2176,11 @@ class BundleManager:
         Args:
             bundle_path: Path to the bundle to serve
             working_dir: Directory to run sbctl in (defaults to bundle path parent)
+            bundle_id: Bundle ID to associate with this process (required for concurrent support)
         """
-        # Determine output directory - use working_dir if provided, active bundle if available, otherwise use bundle path parent
+        # Determine output directory
         if working_dir:
             output_dir = working_dir
-        elif self.active_bundle:
-            output_dir = self.active_bundle.path
         else:
             output_dir = bundle_path.parent
 
@@ -1975,12 +2195,31 @@ class BundleManager:
             str(bundle_path),
         ]
 
-        logger.debug(f"Starting sbctl process: {' '.join(cmd)}")
+        logger.debug(f"Starting sbctl process for bundle {bundle_id}: {' '.join(cmd)}")
 
-        # Start the process
-        self.sbctl_process = await asyncio.create_subprocess_exec(
-            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-        )
+        # Start the process in its own process group for clean termination
+        # This ensures child processes are also terminated when we stop sbctl
+        import sys
+
+        process_kwargs = {
+            "stdout": asyncio.subprocess.PIPE,
+            "stderr": asyncio.subprocess.PIPE,
+        }
+
+        # POSIX: use start_new_session=True
+        # Windows: would use CREATE_NEW_PROCESS_GROUP (not implemented here)
+        if sys.platform != "win32":
+            process_kwargs["start_new_session"] = True
+
+        process = await asyncio.create_subprocess_exec(*cmd, **process_kwargs)
+
+        # Store process in the per-bundle dict for concurrent support
+        if bundle_id:
+            self.sbctl_processes[bundle_id] = process
+            logger.debug(f"Stored sbctl process for bundle {bundle_id} (PID: {process.pid})")
+
+        # Also update legacy property for backward compatibility
+        self.sbctl_process = process
         self._termination_requested = False
 
         # Don't start stderr monitoring immediately - it will be started after initialization
@@ -2022,17 +2261,28 @@ class BundleManager:
 
     async def _terminate_sbctl_process(self, bundle_id: Optional[str] = None) -> None:
         """
-        Terminate sbctl process(es).
+        Terminate sbctl process for a specific bundle.
 
         Args:
-            bundle_id: Specific bundle ID to terminate. If None, terminates active bundle's process.
-                      For concurrent support, always specify bundle_id to avoid killing other bundles.
+            bundle_id: Specific bundle ID to terminate. If None, terminates active bundle's process
+                      (legacy behavior - prefer explicit bundle_id).
+
+        Note:
+            This method should be called OUTSIDE of state.lock to avoid deadlocks.
+            The caller should set state.cancel_requested=True BEFORE calling this.
         """
         # Determine which bundle to terminate
         target_bundle_id = bundle_id or self.active_bundle_id
         if not target_bundle_id:
             logger.debug("No bundle to terminate")
             return
+
+        # Mark cancel_requested in bundle state (if state exists)
+        if target_bundle_id in self.bundle_states:
+            state = self.bundle_states[target_bundle_id]
+            async with state.lock:
+                state.cancel_requested = True
+                logger.debug(f"[Bundle {target_bundle_id}][Epoch {state.epoch}] cancel_requested=True")
 
         # Get the specific process for this bundle
         process = self.sbctl_processes.get(target_bundle_id)
@@ -2049,6 +2299,7 @@ class BundleManager:
                 pass
             self._stderr_monitor_task = None
 
+        # Legacy global flag (kept for backward compatibility with other code)
         self._termination_requested = True
         try:
             logger.debug(f"Terminating sbctl process for bundle {target_bundle_id}...")
@@ -2212,15 +2463,80 @@ class BundleManager:
             else:
                 logger.debug("Skipping orphaned process cleanup (disabled by configuration)")
 
+    async def _cleanup_bundle(self, bundle_id: str) -> None:
+        """
+        Clean up a specific bundle including its process and resources.
+
+        This method follows proper lock discipline for concurrent execution:
+        1. Acquire lock, mark as stopping, capture epoch/process
+        2. Release lock, terminate process (long operation)
+        3. Re-acquire lock, finalize if epoch matches
+
+        Args:
+            bundle_id: The bundle to clean up
+
+        Note:
+            This does NOT affect other bundles (unlike _cleanup_active_bundle).
+            Only the specified bundle_id is cleaned up.
+        """
+        # Get state if it exists
+        async with self._registry_lock:
+            if bundle_id not in self.bundle_states:
+                logger.debug(f"[Bundle {bundle_id}] No state to cleanup")
+                return
+            state = self.bundle_states[bundle_id]
+
+        # Mark as stopping and capture process (under lock)
+        proc_to_kill: Optional[asyncio.subprocess.Process] = None
+        local_epoch: Optional[int] = None
+
+        async with state.lock:
+            logger.info(f"[Bundle {bundle_id}][Epoch {state.epoch}] Cleaning up bundle, status={state.status}")
+
+            if state.status in ("stopped", "failed"):
+                logger.debug(f"[Bundle {bundle_id}] Already stopped/failed, nothing to cleanup")
+                return
+
+            # Mark for termination
+            state.cancel_requested = True
+            state.status = "stopping"
+            local_epoch = state.epoch
+            proc_to_kill = state.process
+
+        # Terminate process (outside lock - long operation)
+        if proc_to_kill:
+            logger.info(f"[Bundle {bundle_id}][Epoch {local_epoch}] Terminating sbctl process...")
+            await self._terminate_sbctl_process(bundle_id)
+
+        # Finalize state (under lock, check epoch)
+        async with state.lock:
+            if state.epoch == local_epoch:
+                state.process = None
+                state.status = "stopped"
+                state.stopped_event.set()
+                logger.info(f"[Bundle {bundle_id}][Epoch {local_epoch}] Cleanup complete, status=stopped")
+            else:
+                logger.info(
+                    f"[Bundle {bundle_id}][Epoch {local_epoch}] Superseded during cleanup (current epoch: {state.epoch})"
+                )
+
     async def _cleanup_active_bundle(self) -> None:
         """
-        Clean up the active bundle including processes and extracted directories.
+        Clean up all bundles including processes and extracted directories.
+
+        This method cleans up ALL bundles using the concurrent-safe bundle_states tracking.
+        Legacy name kept for backward compatibility but behavior is now concurrent-safe.
 
         This method:
-        1. Terminates the sbctl process first (if running)
+        1. Terminates sbctl processes for all bundles
         2. Removes extracted bundle directories
-        3. Resets the active bundle reference
+        3. Clears bundle state
         """
+        logger.info("Cleaning up all bundles")
+        for bundle_id in list(self.bundle_states.keys()):
+            await self._cleanup_bundle(bundle_id)
+
+        # Also clean up if active_bundle is set (legacy compatibility)
         if self.active_bundle:
             logger.info(f"Cleaning up active bundle: {self.active_bundle.id}")
 
@@ -2379,17 +2695,39 @@ class BundleManager:
         """
         return self.active_bundle
 
-    async def check_api_server_available(self) -> bool:
+    async def check_api_server_available(self, bundle_id: Optional[str] = None) -> bool:
         """
-        Check if the Kubernetes API server is available.
+        Check if the Kubernetes API server is available for a specific bundle.
+
+        Args:
+            bundle_id: Bundle ID to check (if None, uses active_bundle for legacy compatibility)
 
         Returns:
             True if the API server is responding, False otherwise
         """
+        # Get bundle-specific state and process (concurrent mode)
+        sbctl_process = None
+        bundle_metadata = None
+
+        if bundle_id and bundle_id in self.bundle_states:
+            # Concurrent mode: use bundle_states
+            state = self.bundle_states[bundle_id]
+            sbctl_process = self.sbctl_processes.get(bundle_id)
+            bundle_metadata = state.metadata
+            logger.debug(f"[Bundle {bundle_id}] Checking API for specific bundle (concurrent mode)")
+        elif self.active_bundle:
+            # Legacy mode: use active_bundle
+            sbctl_process = self.sbctl_process
+            bundle_metadata = self.active_bundle
+            logger.debug("Checking API for active bundle (legacy mode)")
+        else:
+            logger.warning("No bundle to check API availability for")
+            return False
+
         # First check if sbctl process is running
-        if not self.sbctl_process or self.sbctl_process.returncode is not None:
+        if not sbctl_process or sbctl_process.returncode is not None:
             # Detect if this is a crash or missing process that we should recover from
-            if self.active_bundle and self.active_bundle.initialized:
+            if bundle_metadata and bundle_metadata.initialized:
                 # Case 1: sbctl process crashed (process exists with non-None returncode)
                 # Case 2: bundle restored from disk but sbctl not started (process is None)
                 if self.sbctl_process and self.sbctl_process.returncode is not None:
@@ -2425,8 +2763,8 @@ class BundleManager:
 
         # Check if kubeconfig exists
         kubeconfig_path = None
-        if self.active_bundle and self.active_bundle.kubeconfig_path.exists():
-            kubeconfig_path = self.active_bundle.kubeconfig_path
+        if bundle_metadata and bundle_metadata.kubeconfig_path.exists():
+            kubeconfig_path = bundle_metadata.kubeconfig_path
         else:
             # Try to find kubeconfig in current directory (where sbctl might create it)
             try:
@@ -2668,16 +3006,21 @@ class BundleManager:
         Returns:
             A dictionary with diagnostic information
         """
+        # Check if any bundles are initialized (concurrent mode) or active bundle (legacy mode)
+        any_bundle_initialized = len(self.bundle_states) > 0 or (
+            self.active_bundle is not None and self.active_bundle.initialized
+        )
+
         diagnostics = {
             "sbctl_available": await self._check_sbctl_available(),
             "sbctl_process_running": self.sbctl_process is not None
             and self.sbctl_process.returncode is None,
             "api_server_available": await self.check_api_server_available(),
-            "bundle_initialized": self.active_bundle is not None and self.active_bundle.initialized,
+            "bundle_initialized": any_bundle_initialized,
             "system_info": await self._get_system_info(),
         }
 
-        # Add active bundle info if available
+        # Add active bundle info if available (legacy mode)
         if self.active_bundle:
             diagnostics["active_bundle"] = {
                 "id": self.active_bundle.id,
@@ -2962,6 +3305,37 @@ class BundleManager:
             return False, f"Not a valid tar.gz file: {str(e)}"
         except Exception as e:
             return False, f"Error checking file: {str(e)}"
+
+    async def _cleanup_all_bundles_for_single_mode(self) -> None:
+        """
+        Clean up all existing bundles and their processes for single bundle mode.
+
+        This maintains the single-bundle invariant by removing all bundles
+        before initializing a new one.
+        """
+        logger.info("Cleaning up all bundles for single_bundle_mode")
+
+        # Terminate all sbctl processes
+        for bid in list(self.sbctl_processes.keys()):
+            await self._terminate_sbctl_process(bid)
+
+        # Clear all bundle states
+        async with self._registry_lock:
+            self.bundle_states.clear()
+            self.source_to_bundle_id.clear()
+
+        # Remove all bundle directories (ONLY in single bundle mode!)
+        if self.bundle_dir.exists():
+            for item in self.bundle_dir.iterdir():
+                if item.is_dir() and item.name not in {".", ".."}:
+                    try:
+                        logger.info(f"Removing bundle directory: {item}")
+                        shutil.rmtree(item)
+                    except Exception as e:
+                        logger.warning(f"Failed to remove bundle directory {item}: {e}")
+
+        # Clear legacy active_bundle
+        self.active_bundle = None
 
     async def cleanup(self) -> None:
         """

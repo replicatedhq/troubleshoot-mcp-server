@@ -129,6 +129,10 @@ async def test_kubectl_execution(mock_command_environment, fixtures_dir):
         assert metadata.initialized, "Bundle should be initialized successfully"
         assert metadata.kubeconfig_path.exists(), "Kubeconfig should exist after initialization"
 
+        # For direct BundleManager usage (not via MCP tools), set as active_bundle
+        # This is required for KubectlExecutor which uses get_active_bundle()
+        bundle_manager.active_bundle = metadata
+
         # Set KUBECONFIG environment variable for kubectl
         os.environ["KUBECONFIG"] = str(metadata.kubeconfig_path)
 

@@ -34,6 +34,24 @@ from tests.test_utils.bundle_helpers import create_mock_bundle
 class TestServerLifecycleSimplified:
     """Test server lifecycle scenarios that don't require complex mocking."""
 
+    @pytest.fixture(autouse=True)
+    def clean_app_context(self):
+        """Ensure app context and global state is cleaned before and after each test."""
+        # Import the server module to access its globals
+        import troubleshoot_mcp_server.server as server_module
+
+        # Clean before test
+        set_app_context(None)
+        server_module._bundle_manager = None
+        server_module._is_shutting_down = False
+
+        yield
+
+        # Clean after test
+        set_app_context(None)
+        server_module._bundle_manager = None
+        server_module._is_shutting_down = False
+
     @pytest.fixture
     def mock_server(self):
         """Create a mock FastMCP server for testing."""

@@ -189,7 +189,8 @@ async def test_relative_path_initialization(temp_bundle_dir, mock_valid_bundle):
     # This focuses on the behavior (initializing a bundle) rather than implementation
     with patch.object(bundle_manager, "_initialize_with_sbctl", autospec=False) as mock_init:
         # Set up the mock to create the kubeconfig file and return its path
-        async def side_effect(bundle_path, output_dir):
+        # Note: API evolved to include bundle_id parameter
+        async def side_effect(bundle_path, output_dir, bundle_id=None):
             logger.info(f"Creating mock kubeconfig in {output_dir}")
             # Ensure the output directory exists
             os.makedirs(output_dir, exist_ok=True)
@@ -238,7 +239,8 @@ async def test_bundle_path_resolution_behavior(temp_bundle_dir, mock_valid_bundl
     # Create patch for _initialize_with_sbctl to avoid actual initialization
     with patch.object(bundle_manager, "_initialize_with_sbctl", autospec=False) as mock_init:
         # Set up the mock to return a valid kubeconfig path
-        async def side_effect(bundle_path, output_dir):
+        # Note: API evolved to include bundle_id parameter
+        async def side_effect(bundle_path, output_dir, bundle_id=None):
             os.makedirs(output_dir, exist_ok=True)
             kubeconfig_path = output_dir / "kubeconfig"
             with open(kubeconfig_path, "w") as f:
