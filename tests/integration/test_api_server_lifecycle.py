@@ -50,12 +50,13 @@ class TestAPIServerLifecycle:
         assert result.path.exists()
         assert result.kubeconfig_path.exists()
 
-        # Verify sbctl process is running
-        assert bundle_manager.sbctl_process is not None
-        assert bundle_manager.sbctl_process.returncode is None
+        # Verify sbctl process is running for THIS bundle (concurrent-safe lookup)
+        sbctl_process = bundle_manager.sbctl_processes.get(result.id)
+        assert sbctl_process is not None, f"sbctl process should exist for bundle {result.id}"
+        assert sbctl_process.returncode is None
 
         # Get process ID for validation
-        process_pid = bundle_manager.sbctl_process.pid
+        process_pid = sbctl_process.pid
 
         # Verify process is actually running in system using os.kill(pid, 0)
         process_exists = True
@@ -66,11 +67,12 @@ class TestAPIServerLifecycle:
 
         assert process_exists, f"Process {process_pid} should be running"
 
-        # Test graceful shutdown
-        await bundle_manager._terminate_sbctl_process()
+        # Test graceful shutdown (terminate THIS bundle's process)
+        await bundle_manager._terminate_sbctl_process(result.id)
 
         # Verify process is terminated
-        assert bundle_manager.sbctl_process is None
+        terminated_process = bundle_manager.sbctl_processes.get(result.id)
+        assert terminated_process is None or terminated_process.returncode is not None
 
         # Verify process is no longer running in system
         if process_exists:
@@ -94,6 +96,10 @@ class TestAPIServerLifecycle:
         result = await bundle_manager.initialize_bundle(str(test_bundle_path))
         assert result.initialized is True
 
+        # In concurrent mode, set active_bundle for backward compatibility with KubectlExecutor
+        # This is for testing purposes - production code should use bundle_id directly
+        bundle_manager.active_bundle = result
+
         # Create kubectl executor to test API availability
         kubectl_executor = KubectlExecutor(bundle_manager)
 
@@ -101,17 +107,19 @@ class TestAPIServerLifecycle:
         try:
             # Simple command that should work if API server is available
             # Use longer timeout to account for potential resource contention from parallel tests
-            result = await kubectl_executor.execute("get namespaces", timeout=15, json_output=True)
+            kubectl_result = await kubectl_executor.execute(
+                "get namespaces", timeout=15, json_output=True
+            )
 
             # Verify we got a successful response
-            assert result.exit_code == 0, (
-                f"kubectl command failed with exit code {result.exit_code}: {result.stderr}"
+            assert kubectl_result.exit_code == 0, (
+                f"kubectl command failed with exit code {kubectl_result.exit_code}: {kubectl_result.stderr}"
             )
 
             # Verify we got valid JSON output
-            assert result.is_json, "Expected JSON output from kubectl get namespaces"
-            assert "items" in result.output
-            assert isinstance(result.output["items"], list)
+            assert kubectl_result.is_json, "Expected JSON output from kubectl get namespaces"
+            assert "items" in kubectl_result.output
+            assert isinstance(kubectl_result.output["items"], list)
 
         except Exception as e:
             # Let's see what the actual error is instead of skipping
@@ -126,6 +134,9 @@ class TestAPIServerLifecycle:
         # Initialize bundle
         result = await bundle_manager.initialize_bundle(str(test_bundle_path))
         assert result.initialized is True
+
+        # In concurrent mode, set active_bundle for backward compatibility
+        bundle_manager.active_bundle = result
 
         # Collect diagnostic information
         diagnostics = await self._collect_diagnostics(bundle_manager)
@@ -177,12 +188,11 @@ class TestAPIServerLifecycle:
         result = await bundle_manager.initialize_bundle(str(test_bundle_path))
         assert result.initialized is True
 
-        # Record initial state
-        initial_bundle_path = bundle_manager.active_bundle.path
-        initial_kubeconfig = bundle_manager.active_bundle.kubeconfig_path
-        initial_process_pid = (
-            bundle_manager.sbctl_process.pid if bundle_manager.sbctl_process else None
-        )
+        # Record initial state from result metadata
+        initial_bundle_path = result.path
+        initial_kubeconfig = result.kubeconfig_path
+        sbctl_process = bundle_manager.sbctl_processes.get(result.id)
+        initial_process_pid = sbctl_process.pid if sbctl_process else None
 
         # Verify files exist
         assert initial_bundle_path.exists()
@@ -191,9 +201,9 @@ class TestAPIServerLifecycle:
         # Perform cleanup
         await bundle_manager._cleanup_active_bundle()
 
-        # Verify cleanup results
-        assert bundle_manager.active_bundle is None
-        assert bundle_manager.sbctl_process is None
+        # Verify cleanup results (bundle_states and sbctl_processes should be empty for running bundles)
+        # Note: Failed or stopped bundles may remain in the dicts, but processes should be cleared
+        assert len(bundle_manager.sbctl_processes) == 0
 
         # Verify bundle directory is cleaned up (if in temp directory)
         if "/tmp" in str(initial_bundle_path) or "temp" in str(initial_bundle_path).lower():
@@ -223,9 +233,8 @@ class TestAPIServerLifecycle:
         with pytest.raises(BundleManagerError):
             await bundle_manager.initialize_bundle("/nonexistent/bundle.tar.gz")
 
-        # Verify no process was left running
-        assert bundle_manager.sbctl_process is None
-        assert bundle_manager.active_bundle is None
+        # Verify no processes were left running (failed bundle states may remain)
+        assert len(bundle_manager.sbctl_processes) == 0
 
     @pytest.mark.asyncio
     @pytest.mark.integration
@@ -236,12 +245,14 @@ class TestAPIServerLifecycle:
         # First initialization
         result1 = await bundle_manager.initialize_bundle(str(test_bundle_path))
         assert result1.initialized is True
-        first_pid = bundle_manager.sbctl_process.pid if bundle_manager.sbctl_process else None
+        sbctl_process1 = bundle_manager.sbctl_processes.get(result1.id)
+        first_pid = sbctl_process1.pid if sbctl_process1 else None
 
         # Second initialization should clean up first
         result2 = await bundle_manager.initialize_bundle(str(test_bundle_path))
         assert result2.initialized is True
-        second_pid = bundle_manager.sbctl_process.pid if bundle_manager.sbctl_process else None
+        sbctl_process2 = bundle_manager.sbctl_processes.get(result2.id)
+        second_pid = sbctl_process2.pid if sbctl_process2 else None
 
         # Verify new process is different (or at least that old one is gone)
         if first_pid and second_pid:
@@ -258,31 +269,37 @@ class TestAPIServerLifecycle:
         """Collect diagnostic information from the running system."""
         diagnostics = {}
 
-        # Bundle information
-        if bundle_manager.active_bundle:
+        # Bundle information - use first bundle from bundle_states (concurrent-safe)
+        bundle_id = next(iter(bundle_manager.bundle_states), None)
+        bundle_state = bundle_manager.bundle_states.get(bundle_id) if bundle_id else None
+
+        if bundle_state and bundle_state.metadata:
             diagnostics["bundle_info"] = {
-                "path": str(bundle_manager.active_bundle.path),
-                "kubeconfig_path": str(bundle_manager.active_bundle.kubeconfig_path),
+                "path": str(bundle_state.metadata.path),
+                "kubeconfig_path": str(bundle_state.metadata.kubeconfig_path),
                 "initialized": True,
                 "extracted_at": (
-                    bundle_manager.active_bundle.path.stat().st_mtime
-                    if bundle_manager.active_bundle.path.exists()
+                    bundle_state.metadata.path.stat().st_mtime
+                    if bundle_state.metadata.path.exists()
                     else None
                 ),
             }
         else:
             diagnostics["bundle_info"] = {"initialized": False}
 
-        # Process information
-        if bundle_manager.sbctl_process:
+        # Process information - use first process from sbctl_processes (concurrent-safe)
+        process_id = next(iter(bundle_manager.sbctl_processes), None)
+        sbctl_process = bundle_manager.sbctl_processes.get(process_id) if process_id else None
+
+        if sbctl_process:
             process_info = {
-                "pid": bundle_manager.sbctl_process.pid,
-                "running": bundle_manager.sbctl_process.returncode is None,
+                "pid": sbctl_process.pid,
+                "running": sbctl_process.returncode is None,
             }
 
             # Check if process is still running
             try:
-                os.kill(bundle_manager.sbctl_process.pid, 0)
+                os.kill(sbctl_process.pid, 0)
                 process_info["status"] = "running"
             except OSError:
                 process_info["status"] = "terminated"
@@ -295,7 +312,7 @@ class TestAPIServerLifecycle:
         api_available = False
         api_error = None
 
-        if bundle_manager.active_bundle and bundle_manager.sbctl_process:
+        if bundle_state and sbctl_process:
             try:
                 kubectl_executor = KubectlExecutor(bundle_manager)
                 result = await kubectl_executor.execute("get namespaces", timeout=5)
@@ -312,11 +329,11 @@ class TestAPIServerLifecycle:
 
         # Resource usage (simplified without psutil)
         resource_usage = {}
-        if bundle_manager.sbctl_process:
+        if sbctl_process:
             try:
-                os.kill(bundle_manager.sbctl_process.pid, 0)
+                os.kill(sbctl_process.pid, 0)
                 resource_usage = {
-                    "pid": bundle_manager.sbctl_process.pid,
+                    "pid": sbctl_process.pid,
                     "process_exists": True,
                 }
             except OSError:
@@ -328,8 +345,8 @@ class TestAPIServerLifecycle:
         diagnostics["timestamps"] = {
             "diagnostic_collected_at": time.time(),
             "bundle_initialized_at": (
-                bundle_manager.active_bundle.path.stat().st_mtime
-                if bundle_manager.active_bundle and bundle_manager.active_bundle.path.exists()
+                bundle_state.metadata.path.stat().st_mtime
+                if bundle_state and bundle_state.metadata and bundle_state.metadata.path.exists()
                 else None
             ),
         }

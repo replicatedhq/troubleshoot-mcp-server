@@ -181,7 +181,7 @@ def check_response_size(
         return [TextContent(type="text", text=overflow_msg)]
 
 
-def get_session_id() -> Optional[str]:
+def get_session_id() -> str:
     """
     Extract the MCP session_id from the current request context.
 
@@ -189,9 +189,10 @@ def get_session_id() -> Optional[str]:
     1. Query param: ?session_id=... (explicit from client)
     2. x-mcp-session-id header (custom header, if MCP SDK preserves it)
     3. mcp-session-id header (SDK's auto-generated session ID)
+    4. Fallback: "default-session" when no session context available
 
     Returns:
-        Session ID string if available, None otherwise
+        Session ID string (always returns a valid session ID)
     """
     try:
         ctx = mcp.get_context()
@@ -212,12 +213,15 @@ def get_session_id() -> Optional[str]:
             if session_id:
                 source = "query" if from_query else ("custom_header" if from_custom_header else "sdk_header")
                 logger.info(f"[Session] Using session_id from {source}: {session_id[:16]}...")
+                return session_id
 
-            return session_id
     except Exception as e:
         logger.error(f"Could not extract session_id from context: {e}", exc_info=True)
 
-    return None
+    # Fallback: provide default session for stdio/test clients
+    # This supports cases where SDK doesn't provide session context
+    logger.debug("[Session] No session_id in context, using default-session")
+    return "default-session"
 
 
 @mcp.tool()
@@ -249,13 +253,8 @@ async def initialize_bundle(
     bundle_manager = get_bundle_manager()
     formatter = get_formatter(verbosity)
 
-    # Get session ID for this tool call
+    # Get session ID for this tool call (always returns a valid ID)
     session_id = get_session_id()
-    if not session_id:
-        error_message = "Could not determine session ID. This tool requires MCP session context."
-        logger.error(error_message)
-        formatted_error = formatter.format_error(error_message)
-        return [TextContent(type="text", text=formatted_error)]
 
     # Validate source is not a SHA-256 hash (common AI agent error)
     import re
@@ -285,8 +284,8 @@ async def initialize_bundle(
         bundle_manager.set_bundle_for_session(session_id, result.id)
         logger.info(f"Bundle {result.id} associated with session {session_id[:16]}... (session_id == bundle_id)")
 
-        # Check if the API server is available
-        api_server_available = await bundle_manager.check_api_server_available()
+        # Check if the API server is available (pass bundle_id for concurrent mode)
+        api_server_available = await bundle_manager.check_api_server_available(bundle_id=result.id)
 
         # Get diagnostic information
         diagnostics = await bundle_manager.get_diagnostic_info()
@@ -474,8 +473,8 @@ async def kubectl(
             formatted_error = formatter.format_error(error_message)
             return check_response_size(formatted_error, "kubectl", formatter)
 
-        # Check if the API server is available before attempting kubectl
-        api_server_available = await bundle_manager.check_api_server_available()
+        # Check if the API server is available before attempting kubectl (pass bundle_id for concurrent mode)
+        api_server_available = await bundle_manager.check_api_server_available(bundle_id=bundle.id)
         if not api_server_available:
             # Get diagnostic information
             diagnostics = await bundle_manager.get_diagnostic_info()

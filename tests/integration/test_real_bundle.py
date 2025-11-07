@@ -33,8 +33,9 @@ async def bundle_manager_fixture(test_support_bundle):
     This fixture:
     1. Creates a temporary directory for the bundle
     2. Initializes a BundleManager in that directory
-    3. Returns the BundleManager for test use
-    4. Cleans up all resources after the test completes
+    3. Enables single_bundle_mode for backward compatibility with components like FileExplorer
+    4. Returns the BundleManager for test use
+    5. Cleans up all resources after the test completes
 
     Args:
         test_support_bundle: Path to the test support bundle (pytest fixture)
@@ -47,6 +48,8 @@ async def bundle_manager_fixture(test_support_bundle):
     with tempfile.TemporaryDirectory() as temp_dir:
         bundle_dir = Path(temp_dir)
         manager = BundleManager(bundle_dir)
+        # Enable single_bundle_mode for tests to work with FileExplorer and get_active_bundle
+        manager.single_bundle_mode = True
 
         try:
             # Return the manager and bundle path for test use
@@ -147,19 +150,30 @@ async def test_bundle_lifecycle(bundle_manager_fixture):
 
     # Act: Initialize the bundle
     result = await asyncio.wait_for(manager.initialize_bundle(str(real_bundle_path)), timeout=30.0)
+    bundle_id = result.id
 
     # Assert: Verify functional behavior (not implementation details)
     assert result.initialized, "Bundle should be marked as initialized"
     assert result.kubeconfig_path.exists(), "Kubeconfig file should exist"
     assert result.path.exists(), "Bundle directory should exist"
 
-    # Verify the bundle can be retrieved by the public API
-    active_bundle = manager.get_active_bundle()
-    assert active_bundle is not None, "Active bundle should be available"
-    assert active_bundle.id == result.id, "Active bundle should match initialized bundle"
+    # Verify bundle exists in concurrent-safe state tracking
+    assert bundle_id in manager.bundle_states, "Bundle should exist in concurrent-safe tracking"
+    state = manager.bundle_states[bundle_id]
+    assert state.metadata is not None, "Bundle metadata should be available"
+    assert state.metadata.id == result.id, "State metadata should match result"
+
+    # Verify sbctl process exists for this bundle
+    process = manager.sbctl_processes.get(bundle_id)
+    assert process is not None, "sbctl process should exist for bundle"
+
+    # Verify the bundle metadata can be accessed from state
+    state_metadata = state.metadata
+    assert state_metadata is not None, "State metadata should be available"
+    assert state_metadata.id == result.id, "State metadata should match result"
 
     # Verify API server functionality (behavior, not implementation)
-    await manager.check_api_server_available()
+    await manager.check_api_server_available(bundle_id)
     # We don't assert this is always True since it depends on the test environment,
     # but we verify the method runs without error
 
@@ -172,6 +186,8 @@ async def test_bundle_lifecycle(bundle_manager_fixture):
     # Test that force re-initialization creates a new bundle
     force_result = await manager.initialize_bundle(str(real_bundle_path), force=True)
     assert force_result.initialized, "Force reinitialization should succeed"
+    force_bundle_id = force_result.id
+    assert force_bundle_id in manager.bundle_states, "New bundle should exist in state tracking"
 
 
 @pytest.mark.asyncio
@@ -193,7 +209,11 @@ async def test_bundle_initialization_workflow(bundle_manager_fixture, test_asser
 
     # First initialize the bundle
     result = await manager.initialize_bundle(str(bundle_path))
+    bundle_id = result.id
     assert result.initialized, "Bundle should be initialized successfully"
+
+    # Verify bundle exists in concurrent-safe state tracking
+    assert bundle_id in manager.bundle_states, "Bundle should exist in concurrent-safe tracking"
 
     # Create a FileExplorer - our component under test
     explorer = FileExplorer(manager)
@@ -267,6 +287,7 @@ async def test_bundle_manager_performance(bundle_manager_fixture):
         manager.initialize_bundle(str(bundle_path)),
         timeout=45.0,  # Reasonable timeout for initialization
     )
+    bundle_id = result.id
 
     # Calculate initialization duration
     duration = time.time() - start_time
@@ -278,6 +299,11 @@ async def test_bundle_manager_performance(bundle_manager_fixture):
         f"Initialization should complete in reasonable time (took {duration:.2f}s)"
     )
 
+    # Verify bundle exists in concurrent-safe state tracking
+    assert bundle_id in manager.bundle_states, "Bundle should exist in concurrent-safe tracking"
+    state = manager.bundle_states[bundle_id]
+    assert state.status == "running", "Bundle state should be 'running' after initialization"
+
     # BEHAVIOR TEST 2: Verify kubeconfig has valid structure
     with open(result.kubeconfig_path, "r") as f:
         kubeconfig_content = f.read()
@@ -288,15 +314,20 @@ async def test_bundle_manager_performance(bundle_manager_fixture):
 
     # BEHAVIOR TEST 3: The API server connection is attempted (we don't assert success
     # since it depends on the environment and sbctl version)
-    await manager.check_api_server_available()
+    await manager.check_api_server_available(bundle_id)
 
-    # BEHAVIOR TEST 4: Test manager state after initialization
+    # BEHAVIOR TEST 4: Verify sbctl process exists for this bundle
+    process = manager.sbctl_processes.get(bundle_id)
+    assert process is not None, "sbctl process should exist for bundle"
+
+    # BEHAVIOR TEST 5: Test manager state after initialization
     # This tests the observable behavior that getting the active bundle works
+    # (available in single_bundle_mode which is enabled for these tests)
     active_bundle = manager.get_active_bundle()
     assert active_bundle is not None, "Manager should have an active bundle"
     assert active_bundle.id == result.id, "Active bundle should match initialized bundle"
 
-    # BEHAVIOR TEST 5: Test diagnostic info is available - behavior users depend on
+    # BEHAVIOR TEST 6: Test diagnostic info is available - behavior users depend on
     diagnostics = await manager.get_diagnostic_info()
     assert isinstance(diagnostics, dict), "Diagnostic info should be available as a dictionary"
     assert "api_server_available" in diagnostics, "Diagnostics should report API server status"
