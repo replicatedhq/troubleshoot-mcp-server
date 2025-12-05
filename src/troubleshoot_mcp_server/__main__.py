@@ -19,13 +19,16 @@ from .lifecycle import setup_signal_handlers, is_shutdown_requested
 logger = logging.getLogger(__name__)
 
 
-def setup_logging(verbose: bool = False, mcp_mode: bool = False) -> None:
+def setup_logging(
+    verbose: bool = False, mcp_mode: bool = False, log_dir: Optional[Path] = None
+) -> None:
     """
     Set up logging configuration.
 
     Args:
         verbose: Whether to enable verbose logging
         mcp_mode: Whether the server is running in MCP mode
+        log_dir: Optional directory to write log files to
     """
     # Set log level based on environment, verbose flag, and mode
     if mcp_mode and not verbose:
@@ -43,19 +46,42 @@ def setup_logging(verbose: bool = False, mcp_mode: bool = False) -> None:
         # In normal mode or verbose mode, use normal levels
         log_level = logging.DEBUG if verbose else logging.INFO
 
-    logging.basicConfig(
-        level=log_level,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        stream=sys.stderr,
-    )
+    # Create formatter
+    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
-    # When in MCP mode, ensure all loggers use stderr
-    if mcp_mode:
-        # Configure root logger to use stderr
-        root_logger = logging.getLogger()
-        for handler in root_logger.handlers:
-            if hasattr(handler, "stream"):
-                handler.stream = sys.stderr
+    # Configure root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(log_level)
+
+    # Clear existing handlers
+    root_logger.handlers.clear()
+
+    # Always add stderr handler
+    stderr_handler = logging.StreamHandler(sys.stderr)
+    stderr_handler.setLevel(log_level)
+    stderr_handler.setFormatter(formatter)
+    root_logger.addHandler(stderr_handler)
+
+    # Add file handler if log_dir is provided (for non-stdio mode)
+    if log_dir and not mcp_mode:
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_file = log_dir / "mcp-server.log"
+        try:
+            # Use RotatingFileHandler to prevent unbounded log growth
+            from logging.handlers import RotatingFileHandler
+
+            file_handler = RotatingFileHandler(
+                log_file,
+                maxBytes=10 * 1024 * 1024,  # 10MB
+                backupCount=3,
+            )
+            file_handler.setLevel(logging.DEBUG)  # Always log DEBUG to file
+            file_handler.setFormatter(formatter)
+            root_logger.addHandler(file_handler)
+            # Log that file logging is active (to stderr only to avoid chicken/egg)
+            stderr_handler.stream.write(f"Logging to file: {log_file}\n")
+        except Exception as e:
+            stderr_handler.stream.write(f"Warning: Could not set up file logging: {e}\n")
 
 
 def handle_show_config() -> None:
@@ -134,18 +160,7 @@ def main(args: Optional[List[str]] = None) -> None:
         os.environ["FASTMCP_HOST"] = parsed_args.host
         os.environ["FASTMCP_PORT"] = str(parsed_args.port)
 
-    # Set up logging
-    setup_logging(parsed_args.verbose, mcp_mode)
-
-    # Log startup information
-    if transport_mode == "stdio":
-        logger.debug("Starting MCP server in stdio mode")
-    else:
-        logger.info(
-            f"Starting MCP server with {transport_mode} transport on {parsed_args.host}:{parsed_args.port}"
-        )
-
-    # Process bundle directory
+    # Process bundle directory BEFORE logging setup (so logs can go to bundle dir)
     bundle_dir = None
     if parsed_args.bundle_dir:
         bundle_dir = Path(parsed_args.bundle_dir)
@@ -160,6 +175,17 @@ def main(args: Optional[List[str]] = None) -> None:
         # If still no bundle directory, use the default /data/bundles in container
         elif os.path.exists("/data/bundles"):
             bundle_dir = Path("/data/bundles")
+
+    # Set up logging (with file logging to bundle_dir if available)
+    setup_logging(parsed_args.verbose, mcp_mode, log_dir=bundle_dir)
+
+    # Log startup information
+    if transport_mode == "stdio":
+        logger.debug("Starting MCP server in stdio mode")
+    else:
+        logger.info(
+            f"Starting MCP server with {transport_mode} transport on {parsed_args.host}:{parsed_args.port}"
+        )
 
     # Log bundle directory info
     if bundle_dir:
