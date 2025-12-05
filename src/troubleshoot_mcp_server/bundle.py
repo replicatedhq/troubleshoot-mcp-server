@@ -1914,11 +1914,9 @@ class BundleManager:
                             process_output += stderr_str
 
                         if "No cluster resources found in bundle" in process_output:
-                            # This is a valid case - bundle has no cluster resources
                             logger.info(
                                 "Bundle contains no cluster resources, marking as host-only bundle"
                             )
-                            # Set flag to indicate this is a host-only bundle
                             self._host_only_bundle = True
                             return  # Exit successfully without kubeconfig
 
@@ -2126,6 +2124,26 @@ class BundleManager:
         else:
             output_dir = bundle_path.parent
 
+        # CRITICAL: Validate bundle_path before passing to sbctl
+        # This catches path issues that would cause "No cluster resources found"
+        if not bundle_path.exists():
+            raise BundleInitializationError(
+                f"Bundle path does not exist: {bundle_path}. "
+                f"This would cause sbctl to report 'No cluster resources found'."
+            )
+
+        bundle_size = bundle_path.stat().st_size if bundle_path.is_file() else 0
+        if bundle_path.is_file() and bundle_size < 1000:  # Minimum reasonable bundle size
+            raise BundleInitializationError(
+                f"Bundle file is suspiciously small ({bundle_size} bytes): {bundle_path}. "
+                f"This may indicate a failed download or corrupted file."
+            )
+
+        logger.info(
+            f"[sbctl] Starting sbctl for bundle {bundle_id} with path: {bundle_path} "
+            f"(exists={bundle_path.exists()}, size={bundle_size} bytes)"
+        )
+
         # sbctl chooses its own port (no --port flag available)
         # For concurrent support, sbctl will bind to different random ports automatically
         cmd = [
@@ -2135,7 +2153,7 @@ class BundleManager:
             str(bundle_path),
         ]
 
-        logger.debug(f"Starting sbctl process for bundle {bundle_id}: {' '.join(cmd)}")
+        logger.info(f"[sbctl] Command: {' '.join(cmd)}")
 
         # Start the process in its own process group for clean termination
         # This ensures child processes are also terminated when we stop sbctl

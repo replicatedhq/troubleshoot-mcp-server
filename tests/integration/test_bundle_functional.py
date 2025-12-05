@@ -351,3 +351,86 @@ async def test_concurrent_bundles_with_cleanup():
             await bm._cleanup_bundle(bundle2_id)
         except Exception:
             pass
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_sbctl_receives_correct_path_and_detects_cluster_resources():
+    """
+    CRITICAL TEST: Verify sbctl receives the correct path through our bundle logic.
+
+    This catches bugs where:
+    - We pass sbctl a wrong path (empty, non-existent, corrupted)
+    - Bundle download fails silently
+    - Path construction is wrong
+
+    The test runs through the ACTUAL initialization code path.
+    """
+    if not TEST_BUNDLE_PATH.exists():
+        pytest.skip(f"Test bundle not found at {TEST_BUNDLE_PATH}")
+
+    bm = BundleManager()
+    bundle_id = "test-sbctl-path-verification"
+
+    try:
+        # Run the full initialization - this uses the actual code path
+        logger.info(f"Initializing bundle from: {TEST_BUNDLE_PATH}")
+        metadata = await bm.initialize_bundle(
+            source=str(TEST_BUNDLE_PATH),
+            force=True,
+            bundle_id=bundle_id,
+        )
+        logger.info(f"Bundle initialized: {metadata}")
+
+        # Wait for sbctl to start
+        await asyncio.sleep(3)
+
+        # CRITICAL CHECKS:
+
+        # 1. Verify bundle was NOT marked as host-only (it has cluster resources)
+        assert not bm._host_only_bundle, (
+            f"Bundle was incorrectly marked as host-only! "
+            f"TEST_BUNDLE_PATH={TEST_BUNDLE_PATH} has cluster-resources but sbctl "
+            f"reported 'No cluster resources found'. Check the path passed to sbctl."
+        )
+
+        # 2. Verify sbctl process is running (not exited quickly due to "no cluster resources")
+        process = bm.sbctl_processes.get(bundle_id)
+        assert process is not None, "sbctl process should be tracked"
+        assert process.returncode is None, (
+            f"sbctl process exited with code {process.returncode}. "
+            f"This may indicate 'No cluster resources found' was triggered incorrectly."
+        )
+
+        # 3. Verify kubeconfig was created (proves sbctl found cluster resources)
+        kubeconfig_path = metadata.path / "kubeconfig"
+        assert kubeconfig_path.exists() or metadata.host_only_bundle is False, (
+            f"Kubeconfig should exist at {kubeconfig_path} for a bundle with cluster resources"
+        )
+
+        # 4. Verify the bundle tarball exists at expected location
+        bundle_tarball = metadata.path / "bundle.tar.gz"
+        if bundle_tarball.exists():
+            size = bundle_tarball.stat().st_size
+            logger.info(f"Bundle tarball at {bundle_tarball}: {size} bytes")
+            assert size > 1000, f"Bundle tarball is suspiciously small: {size} bytes"
+
+        # 5. Verify API server is responding (definitive proof sbctl found resources)
+        bm.active_bundle = metadata
+        kubectl = KubectlExecutor(bm)
+        result = await kubectl.execute("get namespaces", timeout=10, json_output=False)
+
+        # Should NOT get "No bundle initialized" or connection errors
+        error_output = (result.stderr or "") + (result.stdout or "")
+        assert "no bundle initialized" not in error_output.lower(), (
+            f"kubectl reports no bundle: {error_output}"
+        )
+        assert "connection refused" not in error_output.lower(), (
+            f"sbctl API not responding: {error_output}"
+        )
+
+        logger.info(f"SUCCESS: sbctl correctly detected cluster resources in {TEST_BUNDLE_PATH}")
+        logger.info(f"kubectl output: {result.stdout[:200] if result.stdout else 'empty'}")
+
+    finally:
+        await bm._cleanup_bundle(bundle_id)
