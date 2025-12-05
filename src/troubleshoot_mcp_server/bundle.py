@@ -386,6 +386,11 @@ class BundleManager:
         """
         # Check memory first
         if bundle_id in self.bundles:
+            bundle = self.bundles[bundle_id]
+            # Skip sbctl restart for host-only bundles (no cluster resources)
+            if bundle.host_only_bundle:
+                logger.debug(f"Bundle {bundle_id} is host-only, no sbctl needed")
+                return bundle
             # Check if sbctl process is still running for this bundle
             if (
                 bundle_id not in self.sbctl_processes
@@ -394,7 +399,7 @@ class BundleManager:
                 # sbctl died - need to restart it
                 logger.info(f"Bundle {bundle_id} loaded but sbctl not running - restarting")
                 await self._restart_sbctl_for_bundle(bundle_id)
-            return self.bundles[bundle_id]
+            return bundle
 
         # Check disk
         try:
@@ -407,21 +412,30 @@ class BundleManager:
 
             # Validate it's a real bundle
             if kubeconfig_path.exists() or bundle_tarball.exists():
+                # Detect host-only bundles: if tarball exists but no kubeconfig,
+                # it's a host-only bundle (no cluster resources)
+                is_host_only = bundle_tarball.exists() and not kubeconfig_path.exists()
+
                 metadata = BundleMetadata(
                     id=bundle_id,
                     source=f"disk:{bundle_id}",
                     path=bundle_path,
                     kubeconfig_path=kubeconfig_path,
                     initialized=True,
-                    host_only_bundle=False,
+                    host_only_bundle=is_host_only,
                 )
                 # Cache in memory (DON'T set active_bundle_id - causes concurrent conflicts)
                 self.bundles[bundle_id] = metadata
-                logger.info(f"Lazy-loaded bundle from disk: {bundle_id}")
 
-                # Restart sbctl for this bundle (pass bundle_id explicitly)
-                if bundle_tarball.exists():
-                    await self._restart_sbctl_for_bundle(bundle_id)
+                if is_host_only:
+                    logger.info(
+                        f"Lazy-loaded host-only bundle from disk: {bundle_id} (no cluster resources)"
+                    )
+                else:
+                    logger.info(f"Lazy-loaded bundle from disk: {bundle_id}")
+                    # Only restart sbctl for non-host-only bundles
+                    if bundle_tarball.exists():
+                        await self._restart_sbctl_for_bundle(bundle_id)
 
                 return metadata
 
