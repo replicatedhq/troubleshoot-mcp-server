@@ -102,6 +102,7 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
     # Check if we already have a global BundleManager (for Streamable HTTP persistence)
     # This allows Streamable HTTP to reuse the same BundleManager across all sessions
     from .server import get_bundle_manager as get_existing_manager
+
     try:
         existing_manager = get_existing_manager(bundle_dir)
         if existing_manager is not None:
@@ -179,7 +180,9 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
             session_count = len(bundle_manager.session_bundles)
             if session_count > 0:
                 if preserve_bundles:
-                    logger.info(f"PRESERVE_BUNDLES enabled, keeping {session_count} session mappings for reuse")
+                    logger.info(
+                        f"PRESERVE_BUNDLES enabled, keeping {session_count} session mappings for reuse"
+                    )
                 else:
                     logger.info(f"Cleaning up {session_count} session bundles")
                     # Copy session IDs to avoid mutation during iteration

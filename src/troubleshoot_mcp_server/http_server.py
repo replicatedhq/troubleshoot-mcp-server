@@ -7,7 +7,6 @@ the MCP server functionality without the complexity of MCP protocol or stdio/SSE
 Each workflow gets a unique bundle ID for complete isolation.
 """
 
-import asyncio
 import logging
 import time
 import uuid
@@ -105,6 +104,7 @@ class BundleStore:
 
 # Request/Response Models
 
+
 class InitializeRequest(BaseModel):
     url: str
     token: str
@@ -150,12 +150,13 @@ class HealthResponse(BaseModel):
 
 # Create FastAPI app
 
+
 def create_app(bundle_dir: Path) -> FastAPI:
     """Create FastAPI application with bundle store."""
     app = FastAPI(
         title="Troubleshoot MCP HTTP Server",
         description="HTTP REST API for support bundle troubleshooting",
-        version="1.0.0"
+        version="1.0.0",
     )
 
     # Global bundle store
@@ -189,10 +190,7 @@ def create_app(bundle_dir: Path) -> FastAPI:
             )
         except Exception as e:
             logger.exception(f"Failed to initialize bundle: {e}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to initialize bundle: {str(e)}"
-            )
+            raise HTTPException(status_code=500, detail=f"Failed to initialize bundle: {str(e)}")
 
     @app.post("/bundles/{bundle_id}/kubectl", response_model=KubectlResponse)
     async def kubectl_execute(bundle_id: str, req: KubectlRequest):
@@ -205,10 +203,7 @@ def create_app(bundle_dir: Path) -> FastAPI:
         """
         manager = bundle_store.get(bundle_id)
         if not manager:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Bundle {bundle_id} not found"
-            )
+            raise HTTPException(status_code=404, detail=f"Bundle {bundle_id} not found")
 
         try:
             kubectl = KubectlExecutor(bundle_manager=manager)
@@ -238,8 +233,8 @@ def create_app(bundle_dir: Path) -> FastAPI:
                 output = (
                     f"{truncated}\n\n"
                     f"... [OUTPUT TRUNCATED]\n"
-                    f"Response exceeded {MAX_RESPONSE_SIZE/1024/1024:.1f} MB limit (Temporal constraint).\n"
-                    f"Original size: {len(result.output)/1024/1024:.2f} MB\n"
+                    f"Response exceeded {MAX_RESPONSE_SIZE / 1024 / 1024:.1f} MB limit (Temporal constraint).\n"
+                    f"Original size: {len(result.output) / 1024 / 1024:.2f} MB\n"
                     f"\n"
                     f"Suggestions to reduce output size:\n"
                     f"  - Use smaller --tail value (e.g., --tail=50 instead of --tail=200)\n"
@@ -254,21 +249,15 @@ def create_app(bundle_dir: Path) -> FastAPI:
             )
         except KubectlError as e:
             logger.error(f"kubectl error in bundle {bundle_id}: {e}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"kubectl execution failed: {str(e)}"
-            )
+            raise HTTPException(status_code=500, detail=f"kubectl execution failed: {str(e)}")
         except Exception as e:
             logger.exception(f"Unexpected error executing kubectl in bundle {bundle_id}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"kubectl execution failed: {str(e)}"
-            )
+            raise HTTPException(status_code=500, detail=f"kubectl execution failed: {str(e)}")
 
     @app.get("/bundles/{bundle_id}/files", response_model=FilesResponse)
     async def list_files(
         bundle_id: str,
-        path: str = Query(default="", description="Path within bundle (defaults to bundle root)")
+        path: str = Query(default="", description="Path within bundle (defaults to bundle root)"),
     ):
         """
         List files in the specified bundle path.
@@ -279,10 +268,7 @@ def create_app(bundle_dir: Path) -> FastAPI:
         """
         manager = bundle_store.get(bundle_id)
         if not manager:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Bundle {bundle_id} not found"
-            )
+            raise HTTPException(status_code=404, detail=f"Bundle {bundle_id} not found")
 
         try:
             # Use path as-is - FileExplorer's _get_bundle_path() handles /extracted resolution
@@ -296,6 +282,7 @@ def create_app(bundle_dir: Path) -> FastAPI:
 
             # Parse the formatted JSON to get file names
             import json
+
             file_names = json.loads(formatted_output)
 
             return FilesResponse(
@@ -305,20 +292,15 @@ def create_app(bundle_dir: Path) -> FastAPI:
         except FileSystemError as e:
             logger.error(f"Filesystem error in bundle {bundle_id}: {e}")
             raise HTTPException(
-                status_code=404 if "not found" in str(e).lower() else 500,
-                detail=str(e)
+                status_code=404 if "not found" in str(e).lower() else 500, detail=str(e)
             )
         except Exception as e:
             logger.exception(f"Unexpected error listing files in bundle {bundle_id}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to list files: {str(e)}"
-            )
+            raise HTTPException(status_code=500, detail=f"Failed to list files: {str(e)}")
 
     @app.get("/bundles/{bundle_id}/files/content", response_model=FileContentResponse)
     async def read_file(
-        bundle_id: str,
-        path: str = Query(..., description="Path to file within bundle")
+        bundle_id: str, path: str = Query(..., description="Path to file within bundle")
     ):
         """
         Read file content from the specified bundle.
@@ -329,10 +311,7 @@ def create_app(bundle_dir: Path) -> FastAPI:
         """
         manager = bundle_store.get(bundle_id)
         if not manager:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Bundle {bundle_id} not found"
-            )
+            raise HTTPException(status_code=404, detail=f"Bundle {bundle_id} not found")
 
         try:
             # Use path as-is - FileExplorer's _get_bundle_path() and _normalize_path() handle resolution
@@ -343,7 +322,7 @@ def create_app(bundle_dir: Path) -> FastAPI:
             if result.binary:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Cannot read binary file: {path}. Binary files are not supported. Use file exploration tools for text files only."
+                    detail=f"Cannot read binary file: {path}. Binary files are not supported. Use file exploration tools for text files only.",
                 )
 
             # Use MINIMAL formatter for compact output (saves tokens!)
@@ -369,7 +348,7 @@ def create_app(bundle_dir: Path) -> FastAPI:
                 content = (
                     f"{truncated}\n\n"
                     f"... [FILE TRUNCATED]\n"
-                    f"File size ({original_size/1024/1024:.2f} MB) exceeded {MAX_RESPONSE_SIZE/1024/1024:.1f} MB limit.\n"
+                    f"File size ({original_size / 1024 / 1024:.2f} MB) exceeded {MAX_RESPONSE_SIZE / 1024 / 1024:.1f} MB limit.\n"
                     f"\n"
                     f"Suggestions:\n"
                     f"  - Use grep_files to search for specific content\n"
@@ -384,15 +363,11 @@ def create_app(bundle_dir: Path) -> FastAPI:
         except FileSystemError as e:
             logger.error(f"Filesystem error reading file in bundle {bundle_id}: {e}")
             raise HTTPException(
-                status_code=404 if "not found" in str(e).lower() else 500,
-                detail=str(e)
+                status_code=404 if "not found" in str(e).lower() else 500, detail=str(e)
             )
         except Exception as e:
             logger.exception(f"Unexpected error reading file in bundle {bundle_id}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to read file: {str(e)}"
-            )
+            raise HTTPException(status_code=500, detail=f"Failed to read file: {str(e)}")
 
     @app.delete("/bundles/{bundle_id}", response_model=CleanupResponse)
     async def cleanup_bundle(bundle_id: str):
@@ -404,10 +379,7 @@ def create_app(bundle_dir: Path) -> FastAPI:
         """
         manager = await bundle_store.remove(bundle_id)
         if not manager:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Bundle {bundle_id} not found"
-            )
+            raise HTTPException(status_code=404, detail=f"Bundle {bundle_id} not found")
 
         return CleanupResponse(
             status="deleted",
@@ -417,7 +389,9 @@ def create_app(bundle_dir: Path) -> FastAPI:
     return app
 
 
-async def run_http_server(host: str = "0.0.0.0", port: int = 9000, bundle_dir: Path = Path("/tmp/bundles")):
+async def run_http_server(
+    host: str = "0.0.0.0", port: int = 9000, bundle_dir: Path = Path("/tmp/bundles")
+):
     """
     Run the HTTP server.
 

@@ -287,7 +287,9 @@ class BundleManager:
         # NEW: Concurrent bundle state management (replaces active_bundle pattern)
         self._registry_lock = asyncio.Lock()  # Atomic state creation
         self.bundle_states: Dict[str, BundleState] = {}  # Per-bundle state tracking
-        self.source_to_bundle_id: Dict[str, str] = {}  # Maps source URL/path -> bundle_id for deduplication
+        self.source_to_bundle_id: Dict[
+            str, str
+        ] = {}  # Maps source URL/path -> bundle_id for deduplication
 
         # LEGACY: Track multiple concurrent bundles (will be replaced by bundle_states)
         self.bundles: dict[str, BundleMetadata] = {}
@@ -431,6 +433,8 @@ class BundleManager:
     async def _restart_sbctl_for_bundle(self, bundle_id: str) -> None:
         """Restart sbctl process for a bundle loaded from disk.
 
+        CRITICAL: This must also update the kubeconfig because sbctl picks a new port on restart.
+
         Args:
             bundle_id: Bundle ID to restart sbctl for
         """
@@ -456,9 +460,25 @@ class BundleManager:
             old_active = self.active_bundle_id
             self.active_bundle_id = bundle_id
 
+            # CRITICAL: Delete old kubeconfig before restart
+            # sbctl will create a new one with its new port
+            kubeconfig_path = bundle.path / "kubeconfig"
+            if kubeconfig_path.exists():
+                logger.info(f"Deleting stale kubeconfig before restart: {kubeconfig_path}")
+                try:
+                    kubeconfig_path.unlink()
+                except Exception as e:
+                    logger.warning(f"Failed to delete old kubeconfig: {e}")
+
             # Start sbctl (will be stored in sbctl_processes[bundle_id] via property setter)
             await self._start_sbctl_process(bundle_tarball, bundle.path)
             logger.info(f"Restarted sbctl for bundle {bundle_id}")
+
+            # Wait for new kubeconfig to be created (sbctl picks a new port)
+            process = self.sbctl_processes.get(bundle_id)
+            if process:
+                await self._wait_for_initialization(kubeconfig_path, bundle_id, process)
+                logger.info(f"New kubeconfig ready for bundle {bundle_id}")
 
             # Restore previous active
             self.active_bundle_id = old_active
@@ -539,7 +559,9 @@ class BundleManager:
             if bundle_id in self.bundle_states:
                 state = self.bundle_states[bundle_id]
                 logger.info(f"[DEBUG] Found state for bundle {bundle_id}, status={state.status}")
-                logger.info(f"[DEBUG] state.metadata={state.metadata}, initialized={state.metadata.initialized if state.metadata else None}")
+                logger.info(
+                    f"[DEBUG] state.metadata={state.metadata}, initialized={state.metadata.initialized if state.metadata else None}"
+                )
 
                 # Check if files are initialized and ready
                 # API status doesn't matter - tools will check that themselves
@@ -560,7 +582,7 @@ class BundleManager:
             logger.info(f"[DEBUG] bundle_id {bundle_id} not in bundle_states, using legacy path")
             return bundle_id  # Legacy path: bundle_id found but no state tracking yet
 
-        logger.info(f"[DEBUG] No in-memory mapping found, checking disk fallback")
+        logger.info("[DEBUG] No in-memory mapping found, checking disk fallback")
         # Fallback: check if session_id itself is a bundle directory on disk
         # This allows stateless operation - if bundle was initialized with
         # session_id as bundle_id, we can find it without in-memory state
@@ -586,14 +608,18 @@ class BundleManager:
         if bundle_id:
             logger.info(f"Cleaning up session {session_id[:8]}... (bundle: {bundle_id})")
             try:
-                await self.cleanup_bundle(bundle_id)
+                await self._cleanup_bundle(bundle_id)
             except Exception as e:
                 logger.error(f"Error cleaning up bundle {bundle_id} for session {session_id}: {e}")
         else:
             logger.debug(f"No bundle associated with session {session_id[:8]}...")
 
     async def initialize_bundle(
-        self, source: str, force: bool = False, token: Optional[str] = None, bundle_id: Optional[str] = None
+        self,
+        source: str,
+        force: bool = False,
+        token: Optional[str] = None,
+        bundle_id: Optional[str] = None,
     ) -> BundleMetadata:
         """
         Initialize a support bundle from a source with concurrent-safe bundle management.
@@ -642,7 +668,9 @@ class BundleManager:
 
                 # Fast path: bundle already running
                 if state.status == "running" and not force:
-                    logger.info(f"[Bundle {bundle_id}] Already running, returning existing metadata")
+                    logger.info(
+                        f"[Bundle {bundle_id}] Already running, returning existing metadata"
+                    )
                     return state.metadata
 
                 # Wait path: another initialization in progress
@@ -682,7 +710,9 @@ class BundleManager:
             logger.info(f"[Bundle {bundle_id}][Epoch {my_epoch}] Downloading/locating bundle...")
             if source.startswith(("http://", "https://")):
                 # Download directly into session directory to avoid collisions
-                bundle_path = await self._download_bundle(source, token=token, output_dir=bundle_output_dir)
+                bundle_path = await self._download_bundle(
+                    source, token=token, output_dir=bundle_output_dir
+                )
                 bundle_path_for_init = bundle_path
             else:
                 # First, check if it's a full path
@@ -698,10 +728,14 @@ class BundleManager:
                     else:
                         # Also check if there's a bundle with matching relative_path in available bundles
                         try:
-                            available_bundles = await self.list_available_bundles(include_invalid=True)
+                            available_bundles = await self.list_available_bundles(
+                                include_invalid=True
+                            )
                             for bundle in available_bundles:
                                 if bundle.relative_path == source or bundle.name == source:
-                                    logger.info(f"Found matching bundle by relative path: {bundle.path}")
+                                    logger.info(
+                                        f"Found matching bundle by relative path: {bundle.path}"
+                                    )
                                     bundle_path = Path(bundle.path)
                                     break
                         except Exception as e:
@@ -717,14 +751,18 @@ class BundleManager:
 
             # Check epoch: superseded by newer attempt?
             if state.epoch != my_epoch:
-                logger.info(f"[Bundle {bundle_id}][Epoch {my_epoch}] Superseded during download, exiting gracefully")
+                logger.info(
+                    f"[Bundle {bundle_id}][Epoch {my_epoch}] Superseded during download, exiting gracefully"
+                )
                 my_event.set()
                 async with state.lock:
                     return state.metadata if state.metadata else await self._wait_for_latest(state)
 
             # Check epoch before sbctl initialization
             if state.epoch != my_epoch:
-                logger.info(f"[Bundle {bundle_id}][Epoch {my_epoch}] Superseded before sbctl init, exiting")
+                logger.info(
+                    f"[Bundle {bundle_id}][Epoch {my_epoch}] Superseded before sbctl init, exiting"
+                )
                 my_event.set()
                 async with state.lock:
                     return state.metadata if state.metadata else await self._wait_for_latest(state)
@@ -737,7 +775,9 @@ class BundleManager:
 
             # Check epoch after sbctl initialization
             if state.epoch != my_epoch:
-                logger.info(f"[Bundle {bundle_id}][Epoch {my_epoch}] Superseded after sbctl init, exiting")
+                logger.info(
+                    f"[Bundle {bundle_id}][Epoch {my_epoch}] Superseded after sbctl init, exiting"
+                )
                 my_event.set()
                 async with state.lock:
                     return state.metadata if state.metadata else await self._wait_for_latest(state)
@@ -756,10 +796,14 @@ class BundleManager:
                     dir_count += len(dirs)
                     file_count += len(files)
 
-                logger.info(f"Bundle directory contains {file_count} files and {dir_count} directories")
+                logger.info(
+                    f"Bundle directory contains {file_count} files and {dir_count} directories"
+                )
 
                 top_entries = list(bundle_output_dir.glob("*"))
-                logger.info(f"Top-level entries in bundle directory: {[e.name for e in top_entries]}")
+                logger.info(
+                    f"Top-level entries in bundle directory: {[e.name for e in top_entries]}"
+                )
 
                 # Extract if needed
                 extract_dir = bundle_output_dir / "extracted"
@@ -768,10 +812,14 @@ class BundleManager:
                     extract_dir.mkdir(exist_ok=True)
 
                     # Use bundle_path_for_init which points to the actual tarball
-                    if bundle_path_for_init.exists() and str(bundle_path_for_init).endswith((".tar.gz", ".tgz")):
+                    if bundle_path_for_init.exists() and str(bundle_path_for_init).endswith(
+                        (".tar.gz", ".tgz")
+                    ):
                         import tarfile
 
-                        logger.info(f"Extracting bundle from {bundle_path_for_init} to: {extract_dir}")
+                        logger.info(
+                            f"Extracting bundle from {bundle_path_for_init} to: {extract_dir}"
+                        )
                         with tarfile.open(bundle_path_for_init, "r:gz") as tar:
                             members = tar.getmembers()
                             logger.info(f"Support bundle contains {len(members)} entries")
@@ -795,14 +843,20 @@ class BundleManager:
                             file_count += len(files)
 
                         extracted_files = list(extract_dir.glob("*"))
-                        logger.info(f"Extracted {len(extracted_files)} top-level entries to {extract_dir}")
-                        logger.info(f"Extracted bundle contains {file_count} files and {dir_count} directories")
+                        logger.info(
+                            f"Extracted {len(extracted_files)} top-level entries to {extract_dir}"
+                        )
+                        logger.info(
+                            f"Extracted bundle contains {file_count} files and {dir_count} directories"
+                        )
             except Exception as list_err:
                 logger.warning(f"Error while listing/extracting bundle files: {list_err}")
 
             # Check epoch before finalizing
             if state.epoch != my_epoch:
-                logger.info(f"[Bundle {bundle_id}][Epoch {my_epoch}] Superseded during extraction, exiting")
+                logger.info(
+                    f"[Bundle {bundle_id}][Epoch {my_epoch}] Superseded during extraction, exiting"
+                )
                 my_event.set()
                 async with state.lock:
                     return state.metadata if state.metadata else await self._wait_for_latest(state)
@@ -824,7 +878,9 @@ class BundleManager:
                     state.process = self.sbctl_processes.get(bundle_id)
                     state.status = "running"
                     state.last_error = None
-                    logger.info(f"[Bundle {bundle_id}][Epoch {my_epoch}] Initialization complete, status=running")
+                    logger.info(
+                        f"[Bundle {bundle_id}][Epoch {my_epoch}] Initialization complete, status=running"
+                    )
                 else:
                     logger.info(
                         f"[Bundle {bundle_id}][Epoch {my_epoch}] Superseded during finalization, newer epoch owns state"
@@ -1027,7 +1083,9 @@ class BundleManager:
                 raise BundleDownloadError(distinct_error_msg) from e
             # === END CONSOLIDATED EXCEPTION HANDLING ===
 
-    async def _download_github_attachment(self, url: str, output_dir: Optional[Path] = None) -> Path:
+    async def _download_github_attachment(
+        self, url: str, output_dir: Optional[Path] = None
+    ) -> Path:
         """
         Download bundle from GitHub with proper authentication.
 
@@ -1167,7 +1225,9 @@ class BundleManager:
         # This should not be reached, but add as safety
         raise BundleDownloadError("Failed to download from GitHub after all retries")
 
-    async def _download_bundle(self, url: str, token: Optional[str] = None, output_dir: Optional[Path] = None) -> Path:
+    async def _download_bundle(
+        self, url: str, token: Optional[str] = None, output_dir: Optional[Path] = None
+    ) -> Path:
         """
         Download a support bundle from a URL, handling Replicated Vendor Portal and GitHub URLs.
 
@@ -1413,7 +1473,9 @@ class BundleManager:
                             return kubeconfig_path
                     # Fallback to legacy global flag
                     if self._termination_requested:
-                        logger.debug("sbctl process was intentionally terminated during initialization (quick-exit)")
+                        logger.debug(
+                            "sbctl process was intentionally terminated during initialization (quick-exit)"
+                        )
                         return kubeconfig_path
 
                 # If we get here, sbctl exited quickly but not due to "no cluster resources"
@@ -2161,7 +2223,9 @@ class BundleManager:
             state = self.bundle_states[target_bundle_id]
             async with state.lock:
                 state.cancel_requested = True
-                logger.debug(f"[Bundle {target_bundle_id}][Epoch {state.epoch}] cancel_requested=True")
+                logger.debug(
+                    f"[Bundle {target_bundle_id}][Epoch {state.epoch}] cancel_requested=True"
+                )
 
         # Get the specific process for this bundle
         process = self.sbctl_processes.get(target_bundle_id)
@@ -2298,44 +2362,11 @@ class BundleManager:
                         except Exception as e:
                             logger.warning(f"Error cleaning up orphaned sbctl processes: {e}")
 
-                    # As a fallback, try to clean up any sbctl processes related to serve
-                    try:
-                        # Use psutil to find and terminate sbctl serve processes
-                        terminated_count = 0
-                        for proc in psutil.process_iter(["pid", "name", "cmdline"]):
-                            try:
-                                # Check if this is an sbctl serve process
-                                if (
-                                    proc.info["name"]
-                                    and "sbctl" in proc.info["name"]
-                                    and proc.info["cmdline"]
-                                    and any("serve" in arg for arg in proc.info["cmdline"])
-                                ):
-                                    try:
-                                        proc.terminate()
-                                        terminated_count += 1
-                                        logger.debug(
-                                            f"Terminated sbctl serve process with PID {proc.info['pid']}"
-                                        )
-                                    except (psutil.NoSuchProcess, psutil.AccessDenied):
-                                        # Process already gone or access denied - skip it
-                                        continue
-                            except (
-                                psutil.NoSuchProcess,
-                                psutil.AccessDenied,
-                                psutil.ZombieProcess,
-                            ):
-                                # Process disappeared or access denied - skip it
-                                continue
-
-                        if terminated_count > 0:
-                            logger.debug(
-                                f"Successfully terminated {terminated_count} sbctl serve processes"
-                            )
-                        else:
-                            logger.debug("No sbctl serve processes found to terminate")
-                    except Exception as e:
-                        logger.warning(f"Error using psutil to terminate sbctl processes: {e}")
+                    # NOTE: Removed aggressive fallback that killed ALL sbctl serve processes.
+                    # This was causing race conditions where cleanup would kill sbctl processes
+                    # belonging to OTHER bundles/sessions. The bundle-specific cleanup above
+                    # (checking bundle_path in args) is sufficient. True orphan cleanup is
+                    # handled by cleanup() method with proper PID tracking.
 
                 except Exception as e:
                     logger.warning(f"Error during extended cleanup: {e}")
@@ -2370,7 +2401,9 @@ class BundleManager:
         local_epoch: Optional[int] = None
 
         async with state.lock:
-            logger.info(f"[Bundle {bundle_id}][Epoch {state.epoch}] Cleaning up bundle, status={state.status}")
+            logger.info(
+                f"[Bundle {bundle_id}][Epoch {state.epoch}] Cleaning up bundle, status={state.status}"
+            )
 
             if state.status in ("stopped", "failed"):
                 logger.debug(f"[Bundle {bundle_id}] Already stopped/failed, nothing to cleanup")
@@ -2393,7 +2426,9 @@ class BundleManager:
                 state.process = None
                 state.status = "stopped"
                 state.stopped_event.set()
-                logger.info(f"[Bundle {bundle_id}][Epoch {local_epoch}] Cleanup complete, status=stopped")
+                logger.info(
+                    f"[Bundle {bundle_id}][Epoch {local_epoch}] Cleanup complete, status=stopped"
+                )
             else:
                 logger.info(
                     f"[Bundle {bundle_id}][Epoch {local_epoch}] Superseded during cleanup (current epoch: {state.epoch})"
@@ -2595,24 +2630,30 @@ class BundleManager:
         try:
             # Use kubectl version with --client=false to test server connectivity
             process = await asyncio.create_subprocess_exec(
-                "kubectl", "version", "--client=false",
-                "--kubeconfig", str(kubeconfig_path),
-                "--request-timeout", "1s",
+                "kubectl",
+                "version",
+                "--client=false",
+                "--kubeconfig",
+                str(kubeconfig_path),
+                "--request-timeout",
+                "1s",
                 stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.DEVNULL
+                stderr=asyncio.subprocess.DEVNULL,
             )
 
             try:
                 exit_code = await asyncio.wait_for(process.wait(), timeout=timeout)
                 is_healthy = exit_code == 0
-                logger.debug(f"Health probe for {kubeconfig_path.parent.name}: {'healthy' if is_healthy else 'unhealthy'}")
+                logger.debug(
+                    f"Health probe for {kubeconfig_path.parent.name}: {'healthy' if is_healthy else 'unhealthy'}"
+                )
                 return is_healthy
             except asyncio.TimeoutError:
                 logger.debug(f"Health probe timeout for {kubeconfig_path.parent.name}")
                 try:
                     process.kill()
                     await process.wait()
-                except:
+                except Exception:
                     pass
                 return False
         except Exception as e:
@@ -2647,21 +2688,27 @@ class BundleManager:
         # Find sbctl process(es) serving this bundle
         killed_count = 0
         try:
-            for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+            for proc in psutil.process_iter(["pid", "name", "cmdline"]):
                 try:
-                    if proc.info['name'] == 'sbctl' and proc.info['cmdline']:
+                    if proc.info["name"] == "sbctl" and proc.info["cmdline"]:
                         # Check if this sbctl is serving our bundle
-                        cmdline = ' '.join(proc.info['cmdline'])
+                        cmdline = " ".join(proc.info["cmdline"])
                         if str(bundle_path) in cmdline:
-                            logger.info(f"Terminating sbctl process {proc.info['pid']} for {bundle_id}")
+                            logger.info(
+                                f"Terminating sbctl process {proc.info['pid']} for {bundle_id}"
+                            )
                             proc.terminate()
 
                             # Wait up to 5 seconds for graceful shutdown
                             try:
                                 proc.wait(timeout=5)
-                                logger.debug(f"sbctl process {proc.info['pid']} terminated gracefully")
+                                logger.debug(
+                                    f"sbctl process {proc.info['pid']} terminated gracefully"
+                                )
                             except psutil.TimeoutExpired:
-                                logger.warning(f"sbctl process {proc.info['pid']} did not terminate, killing")
+                                logger.warning(
+                                    f"sbctl process {proc.info['pid']} did not terminate, killing"
+                                )
                                 proc.kill()
                                 proc.wait(timeout=2)
 
@@ -2747,7 +2794,6 @@ class BundleManager:
         # - HTTP endpoint probing
         # All replaced with simple kubectl health probe above
 
-
     def _check_port_listening_python(self, port: int) -> bool:
         """
         Python-native port checking that replaces netstat dependency.
@@ -2788,7 +2834,9 @@ class BundleManager:
             # In concurrent mode, we can't check API without a specific bundle_id
             # Just mark as unavailable in diagnostics
             if self.active_bundle:
-                api_available = await self.check_api_server_available(bundle_id=self.active_bundle.id)
+                api_available = await self.check_api_server_available(
+                    bundle_id=self.active_bundle.id
+                )
         except Exception as e:
             logger.debug(f"Could not check API availability for diagnostics: {e}")
 
@@ -2827,22 +2875,46 @@ class BundleManager:
         Returns:
             True if sbctl is available, False otherwise
         """
+        import traceback
 
         try:
             from .subprocess_utils import subprocess_exec_with_cleanup
 
+            logger.debug("Starting sbctl availability check...")
             returncode, stdout, stderr = await subprocess_exec_with_cleanup(
                 "sbctl", "--help", timeout=10.0
             )
 
             if returncode == 0:
-                logger.debug("sbctl is available")
+                logger.debug("sbctl is available (returncode=0)")
                 return True
             else:
-                logger.warning("sbctl not found or not working")
+                # Log detailed failure information for debugging
+                stderr_text = stderr.decode("utf-8", errors="replace") if stderr else "(empty)"
+                stdout_text = stdout.decode("utf-8", errors="replace") if stdout else "(empty)"
+                logger.error(
+                    f"sbctl check FAILED: returncode={returncode}, "
+                    f"stderr={stderr_text!r}, stdout={stdout_text!r}"
+                )
                 return False
+        except asyncio.TimeoutError:
+            logger.error(
+                "sbctl check FAILED: Timeout after 10 seconds. "
+                "This may indicate sbctl is hung or system is under heavy load."
+            )
+            return False
+        except FileNotFoundError:
+            logger.error(
+                "sbctl check FAILED: FileNotFoundError - sbctl binary not found in PATH. "
+                f"PATH={os.environ.get('PATH', '(not set)')}"
+            )
+            return False
         except Exception as e:
-            logger.warning(f"Error checking sbctl availability: {str(e)}")
+            # Log full exception details including traceback
+            logger.error(
+                f"sbctl check FAILED: {type(e).__name__}: {str(e)}\n"
+                f"Traceback:\n{traceback.format_exc()}"
+            )
             return False
 
     async def _get_system_info(self) -> dict[str, object]:
@@ -3115,55 +3187,27 @@ class BundleManager:
         # 1. Clean up the active bundle (processes and directories)
         await self._cleanup_active_bundle()
 
-        # 2. Clean up any orphaned sbctl processes that might still be running
+        # NOTE: Aggressive orphan cleanup has been REMOVED.
+        #
+        # Previously, this code would scan for ALL sbctl serve processes not in our
+        # tracked sbctl_processes dict and kill them. This caused race conditions:
+        # 1. It killed sbctl --help processes from concurrent availability checks
+        # 2. It killed sbctl serve processes belonging to other BundleManager instances
+        # 3. It killed external sbctl processes not managed by us at all
+        #
+        # The safe approach is to ONLY kill processes we explicitly started and tracked.
+        # The _cleanup_active_bundle() call above handles all tracked processes.
+        # Any true orphans (processes that escaped tracking) should be handled by:
+        # - System restart
+        # - Manual admin intervention
+        # - Natural process exit
+        #
+        # The risk of killing unrelated processes is much worse than leaving orphans.
         if CLEANUP_ORPHANED:
-            try:
-                # Use psutil as a final safety measure to ensure no sbctl processes remain
-                try:
-                    logger.info("Checking for any remaining sbctl processes")
-                    # Find sbctl processes using psutil instead of ps -ef subprocess call
-                    sbctl_processes = []
-                    for proc in psutil.process_iter(["pid", "name", "cmdline"]):
-                        try:
-                            # Check if this is an sbctl process
-                            if (proc.info["name"] and "sbctl" in proc.info["name"]) or (
-                                proc.info["cmdline"]
-                                and any("sbctl" in arg for arg in proc.info["cmdline"])
-                            ):
-                                sbctl_processes.append(proc)
-                        except (
-                            psutil.NoSuchProcess,
-                            psutil.AccessDenied,
-                            psutil.ZombieProcess,
-                        ):
-                            # Process disappeared or access denied - skip it
-                            continue
-
-                    if sbctl_processes:
-                        logger.warning(
-                            f"Found {len(sbctl_processes)} sbctl processes still running during shutdown"
-                        )
-                        # Try to terminate them using psutil instead of pkill subprocess call
-                        terminated_count = 0
-                        for proc in sbctl_processes:
-                            try:
-                                proc.terminate()
-                                terminated_count += 1
-                                logger.debug(f"Terminated sbctl process with PID {proc.pid}")
-                            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                                # Process already gone or access denied - skip it
-                                continue
-                        logger.info(
-                            f"Terminated {terminated_count} sbctl processes during shutdown"
-                        )
-                    else:
-                        logger.info("No sbctl processes found during shutdown")
-                except Exception as process_err:
-                    logger.warning(
-                        f"Error checking for orphaned processes during shutdown: {process_err}"
-                    )
-            except Exception as e:
-                logger.warning(f"Error during extended process cleanup: {e}")
+            logger.debug(
+                "CLEANUP_ORPHANED is enabled but aggressive cleanup has been removed for safety. "
+                "Only tracked processes are cleaned up via _cleanup_active_bundle()."
+            )
 
         # 3. Remove temporary directory if it was created by us
         if self.bundle_dir and str(self.bundle_dir).startswith(tempfile.gettempdir()):

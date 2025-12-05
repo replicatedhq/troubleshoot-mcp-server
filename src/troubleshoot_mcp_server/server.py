@@ -209,7 +209,11 @@ def get_bundle_scope_id() -> Optional[str]:
             scope_id = from_bundle_scope or from_custom_header or from_query
 
             if scope_id:
-                source = "x-bundle-scope" if from_bundle_scope else ("x-mcp-session-id" if from_custom_header else "query")
+                source = (
+                    "x-bundle-scope"
+                    if from_bundle_scope
+                    else ("x-mcp-session-id" if from_custom_header else "query")
+                )
                 logger.info(f"[Bundle Scope] Using scope_id from {source}: {scope_id[:16]}...")
                 return scope_id
 
@@ -246,13 +250,19 @@ def get_session_id() -> str:
             from_sdk_header = req.headers.get("mcp-session-id")
 
             # Debug logging
-            logger.debug(f"[Session] query={from_query}, x-mcp-session-id={from_custom_header}, mcp-session-id={from_sdk_header}")
+            logger.debug(
+                f"[Session] query={from_query}, x-mcp-session-id={from_custom_header}, mcp-session-id={from_sdk_header}"
+            )
 
             # Prefer explicit query param, then custom header, then fall back to SDK session
             session_id = from_query or from_custom_header or from_sdk_header
 
             if session_id:
-                source = "query" if from_query else ("custom_header" if from_custom_header else "sdk_header")
+                source = (
+                    "query"
+                    if from_query
+                    else ("custom_header" if from_custom_header else "sdk_header")
+                )
                 logger.info(f"[Session] Using session_id from {source}: {session_id[:16]}...")
                 return session_id
 
@@ -280,7 +290,9 @@ def get_bundle_id_for_request() -> Optional[str]:
     # Get bundle scope ID (workflow_run_id from X-Bundle-Scope header)
     scope_id = get_bundle_scope_id()
     if not scope_id:
-        logger.error("[Bundle Lookup] No X-Bundle-Scope header found - this is required for Temporal workflows")
+        logger.error(
+            "[Bundle Lookup] No X-Bundle-Scope header found - this is required for Temporal workflows"
+        )
         return None
 
     # Look up bundle for this workflow
@@ -333,11 +345,14 @@ async def initialize_bundle(
 
     # Also get transport session_id for logging/tracking
     transport_session_id = get_session_id()
-    logger.info(f"[init_bundle] transport_id={transport_session_id[:16]}..., scope_id={bundle_scope_id[:16]}...")
+    logger.info(
+        f"[init_bundle] transport_id={transport_session_id[:16]}..., scope_id={bundle_scope_id[:16]}..."
+    )
 
     # Validate source is not a SHA-256 hash (common AI agent error)
     import re
-    if re.match(r'^[a-f0-9]{64}$', source.strip().lower()):
+
+    if re.match(r"^[a-f0-9]{64}$", source.strip().lower()):
         error_message = (
             f"Invalid bundle source: '{source}' appears to be a SHA-256 hash. "
             "The source parameter must be a URL (e.g., https://...) or a local file path. "
@@ -361,8 +376,12 @@ async def initialize_bundle(
 
         # Associate THIS transport session with the bundle (for subsequent tool calls)
         bundle_manager.set_bundle_for_session(transport_session_id, result.id)
-        bundle_manager.set_bundle_for_session(bundle_scope_id, result.id)  # Also map scope_id directly
-        logger.info(f"Bundle {result.id} mapped to scope={bundle_scope_id[:16]}..., transport={transport_session_id[:16]}...")
+        bundle_manager.set_bundle_for_session(
+            bundle_scope_id, result.id
+        )  # Also map scope_id directly
+        logger.info(
+            f"Bundle {result.id} mapped to scope={bundle_scope_id[:16]}..., transport={transport_session_id[:16]}..."
+        )
 
         # Check if the API server is available (pass bundle_id for concurrent mode)
         api_server_available = await bundle_manager.check_api_server_available(bundle_id=result.id)

@@ -141,7 +141,9 @@ def main(args: Optional[List[str]] = None) -> None:
     if transport_mode == "stdio":
         logger.debug("Starting MCP server in stdio mode")
     else:
-        logger.info(f"Starting MCP server with {transport_mode} transport on {parsed_args.host}:{parsed_args.port}")
+        logger.info(
+            f"Starting MCP server with {transport_mode} transport on {parsed_args.host}:{parsed_args.port}"
+        )
 
     # Process bundle directory
     bundle_dir = None
@@ -193,10 +195,12 @@ def main(args: Optional[List[str]] = None) -> None:
             import anyio
 
             # Run HTTP server
-            anyio.run(run_http_server,
-                     parsed_args.host,
-                     parsed_args.port,
-                     bundle_dir or Path("/tmp/bundles"))
+            anyio.run(
+                run_http_server,
+                parsed_args.host,
+                parsed_args.port,
+                bundle_dir or Path("/tmp/bundles"),
+            )
 
         elif transport_mode in ["sse", "streamable-http"]:
             # SSE or Streamable HTTP MCP protocol mode

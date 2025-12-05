@@ -157,8 +157,15 @@ async def test_kubectl_tool(tmp_path: Path) -> None:
 
         # Mock only external subprocess calls and API server checks
         with (
-            patch.object(bundle_manager, "get_bundle_for_session", return_value="test"),  # Returns bundle_id string
-            patch.object(bundle_manager, "_load_bundle_from_disk_if_needed", new_callable=AsyncMock, return_value=mock_bundle),
+            patch.object(
+                bundle_manager, "get_bundle_for_session", return_value="test"
+            ),  # Returns bundle_id string
+            patch.object(
+                bundle_manager,
+                "_load_bundle_from_disk_if_needed",
+                new_callable=AsyncMock,
+                return_value=mock_bundle,
+            ),
             patch.object(
                 bundle_manager, "check_api_server_available", new_callable=AsyncMock
             ) as mock_api,
@@ -223,8 +230,15 @@ async def test_kubectl_tool_host_only_bundle(tmp_path: Path) -> None:
         )
 
         with (
-            patch.object(bundle_manager, "get_bundle_for_session", return_value="test"),  # Returns bundle_id string
-            patch.object(bundle_manager, "_load_bundle_from_disk_if_needed", new_callable=AsyncMock, return_value=mock_bundle),
+            patch.object(
+                bundle_manager, "get_bundle_for_session", return_value="test"
+            ),  # Returns bundle_id string
+            patch.object(
+                bundle_manager,
+                "_load_bundle_from_disk_if_needed",
+                new_callable=AsyncMock,
+                return_value=mock_bundle,
+            ),
             patch("troubleshoot_mcp_server.server.get_bundle_manager") as mock_get_manager,
         ):
             mock_get_manager.return_value = bundle_manager
@@ -289,8 +303,15 @@ async def test_file_operations(tmp_path: Path) -> None:
         bundle_manager.bundles["test"] = mock_bundle
 
         with (
-            patch.object(bundle_manager, "get_bundle_for_session", return_value="test"),  # Returns bundle_id string
-            patch.object(bundle_manager, "_load_bundle_from_disk_if_needed", new_callable=AsyncMock, return_value=mock_bundle),
+            patch.object(
+                bundle_manager, "get_bundle_for_session", return_value="test"
+            ),  # Returns bundle_id string
+            patch.object(
+                bundle_manager,
+                "_load_bundle_from_disk_if_needed",
+                new_callable=AsyncMock,
+                return_value=mock_bundle,
+            ),
             patch("troubleshoot_mcp_server.server.get_bundle_manager") as mock_get_manager,
             patch("troubleshoot_mcp_server.server.get_file_explorer") as mock_get_explorer,
         ):
