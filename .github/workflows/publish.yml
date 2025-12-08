@@ -1,16 +1,16 @@
 name: Publish to PyPI
 
-on:
-  push:
-    tags:
-      # Match SemVer tags without 'v' prefix (e.g., 1.0.0, 2.1.3)
-      - '[0-9]+.[0-9]+.[0-9]+'
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 'Version to publish (e.g. 1.0.0)'
-        required: true
-        type: string
+#on:
+#  push:
+#    tags:
+#      # Match SemVer tags without 'v' prefix (e.g., 1.0.0, 2.1.3)
+#      - '[0-9]+.[0-9]+.[0-9]+'
+#  workflow_dispatch:
+#    inputs:
+#      version:
+#        description: 'Version to publish (e.g. 1.0.0)'
+#        required: true
+#        type: string
 
 jobs:
   publish:
