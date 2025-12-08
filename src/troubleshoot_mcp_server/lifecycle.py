@@ -103,11 +103,17 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
     # This allows Streamable HTTP to reuse the same BundleManager across all sessions
     from .server import get_bundle_manager as get_existing_manager
 
+    # Track whether we're reusing an existing manager (SSE mode)
+    # In SSE mode, each HTTP request creates a new lifespan context, but we reuse
+    # the BundleManager. We should NOT cleanup after each request - only on server shutdown.
+    is_sse_mode = False
+
     try:
         existing_manager = get_existing_manager(bundle_dir)
         if existing_manager is not None:
             logger.info("Reusing existing global BundleManager (Streamable HTTP mode)")
             bundle_manager = existing_manager
+            is_sse_mode = True
         else:
             bundle_manager = BundleManager(bundle_dir)
     except Exception:
@@ -160,6 +166,18 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
     finally:
         # === SHUTDOWN PHASE ===
         elapsed = time.time() - start_time
+
+        # In SSE mode, this finally block runs after EVERY HTTP request (not server shutdown).
+        # We must NOT cleanup resources here - they need to persist across requests.
+        # Cleanup only happens on actual server shutdown (via signal handlers or atexit).
+        if is_sse_mode:
+            logger.debug(
+                f"SSE request completed after {elapsed:.2f}s - keeping resources for next request"
+            )
+            # Don't cleanup anything - BundleManager, sbctl, session mappings all persist
+            return
+
+        # === STDIO MODE CLEANUP (runs once when server exits) ===
         logger.info(
             f"Shutting down MCP Troubleshoot Server after running for {elapsed:.2f} seconds"
         )
@@ -174,24 +192,18 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
                 except (asyncio.CancelledError, asyncio.TimeoutError):
                     logger.warning(f"Task {name} did not complete gracefully within timeout")
 
-        # Clean up all session bundles first (unless preserving for Temporal workflows)
-        preserve_bundles = os.environ.get("PRESERVE_BUNDLES", "false").lower() == "true"
+        # Clean up session mappings and their bundles
         try:
             session_count = len(bundle_manager.session_bundles)
             if session_count > 0:
-                if preserve_bundles:
-                    logger.info(
-                        f"PRESERVE_BUNDLES enabled, keeping {session_count} session mappings for reuse"
-                    )
-                else:
-                    logger.info(f"Cleaning up {session_count} session bundles")
-                    # Copy session IDs to avoid mutation during iteration
-                    session_ids = list(bundle_manager.session_bundles.keys())
-                    for session_id in session_ids:
-                        try:
-                            await bundle_manager.cleanup_session(session_id)
-                        except Exception as e:
-                            logger.error(f"Error cleaning up session {session_id[:8]}...: {e}")
+                logger.info(f"Cleaning up {session_count} session bundles")
+                # Copy session IDs to avoid mutation during iteration
+                session_ids = list(bundle_manager.session_bundles.keys())
+                for session_id in session_ids:
+                    try:
+                        await bundle_manager.cleanup_session(session_id)
+                    except Exception as e:
+                        logger.error(f"Error cleaning up session {session_id[:8]}...: {e}")
         except Exception as e:
             logger.error(f"Error during session bundle cleanup: {e}")
 

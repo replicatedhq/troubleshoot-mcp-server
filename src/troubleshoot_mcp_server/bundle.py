@@ -613,18 +613,26 @@ class BundleManager:
 
     async def cleanup_session(self, session_id: str) -> None:
         """
-        Cleanup resources for an MCP session and its associated bundle.
+        Cleanup session mapping for an MCP session.
+
+        IMPORTANT: This method only removes the session→bundle mapping.
+        It does NOT terminate sbctl processes. In SSE mode, sbctl processes
+        must persist across requests to serve multiple tool calls.
+
+        sbctl processes are only terminated:
+        1. During full server shutdown (via cleanup())
+        2. Via explicit cleanup_bundle_sbctl tool call
+        3. When force=True during re-initialization of the same bundle
 
         Args:
             session_id: MCP session identifier
         """
         bundle_id = self.session_bundles.pop(session_id, None)
         if bundle_id:
-            logger.info(f"Cleaning up session {session_id[:8]}... (bundle: {bundle_id})")
-            try:
-                await self._cleanup_bundle(bundle_id)
-            except Exception as e:
-                logger.error(f"Error cleaning up bundle {bundle_id} for session {session_id}: {e}")
+            logger.debug(
+                f"Removed session mapping {session_id[:8]}... -> bundle {bundle_id} "
+                f"(sbctl process kept running for reuse)"
+            )
         else:
             logger.debug(f"No bundle associated with session {session_id[:8]}...")
 
